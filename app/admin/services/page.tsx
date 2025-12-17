@@ -1,0 +1,310 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Service } from '@/lib/types';
+
+const colors = {
+  primaryBlue: '#003D7A',
+  lightBlue: '#0078C8',
+  teal: '#00A3AD',
+  ptoRed: '#DC2626',
+  border: '#E5E7EB',
+};
+
+const AVAILABLE_CAPABILITIES = [
+  'Inpatient', 'Rooms', 'Admin', 'Precepting', 'Offsites', 'PTO',
+  'Stress Echo', 'Nuclear Stress', 'Vascular', 'Nuclear',
+  'Fourth Floor Echo Lab', 'Echo TTE', 'Video Visits',
+  'Provider Support', 'Virtual Support', 'E-consults',
+  'Hospital at Home', 'CT', 'CMR'
+];
+
+export default function ServicesAdminPage() {
+  const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingService, setEditingService] = useState<Service | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    time_block: 'AM' as 'AM' | 'PM' | 'BOTH',
+    requires_rooms: false,
+    required_capability: '',
+    show_on_main_calendar: true
+  });
+
+  useEffect(() => {
+    fetchServices();
+  }, []);
+
+  const fetchServices = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/services?all=true');
+      const data = await response.json();
+      setServices(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching services:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    try {
+      const response = await fetch('/api/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          required_capability: formData.required_capability || null
+        })
+      });
+
+      if (response.ok) {
+        await fetchServices();
+        setIsCreating(false);
+        resetForm();
+      }
+    } catch (error) {
+      console.error('Error creating service:', error);
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!editingService) return;
+
+    try {
+      const response = await fetch('/api/services', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingService.id,
+          ...formData,
+          required_capability: formData.required_capability || null
+        })
+      });
+
+      if (response.ok) {
+        await fetchServices();
+        setEditingService(null);
+        resetForm();
+      }
+    } catch (error) {
+      console.error('Error updating service:', error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this service? This will also delete all assignments for this service.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/services?id=${id}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        await fetchServices();
+      }
+    } catch (error) {
+      console.error('Error deleting service:', error);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      time_block: 'AM',
+      requires_rooms: false,
+      required_capability: '',
+      show_on_main_calendar: true
+    });
+  };
+
+  const startEdit = (service: Service) => {
+    setEditingService(service);
+    setFormData({
+      name: service.name,
+      time_block: service.time_block,
+      requires_rooms: service.requires_rooms,
+      required_capability: service.required_capability || '',
+      show_on_main_calendar: service.show_on_main_calendar
+    });
+  };
+
+  if (loading) {
+    return <div className="text-center py-8">Loading services...</div>;
+  }
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold" style={{ color: colors.primaryBlue }}>
+          Manage Services ({services.length})
+        </h2>
+        <button
+          onClick={() => { setIsCreating(true); resetForm(); }}
+          className="px-4 py-2 rounded text-white font-medium"
+          style={{ backgroundColor: colors.teal }}
+        >
+          + Add Service
+        </button>
+      </div>
+
+      {/* Create/Edit Form Modal */}
+      {(isCreating || editingService) && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+            <h3 className="text-xl font-bold mb-4" style={{ color: colors.primaryBlue }}>
+              {editingService ? 'Edit Service' : 'Add New Service'}
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Service Name</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded"
+                  style={{ borderColor: colors.border }}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Time Block</label>
+                <select
+                  value={formData.time_block}
+                  onChange={(e) => setFormData(prev => ({ ...prev, time_block: e.target.value as 'AM' | 'PM' | 'BOTH' }))}
+                  className="w-full px-3 py-2 border rounded"
+                  style={{ borderColor: colors.border }}
+                >
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                  <option value="BOTH">All Day (BOTH)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Required Capability</label>
+                <select
+                  value={formData.required_capability}
+                  onChange={(e) => setFormData(prev => ({ ...prev, required_capability: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded"
+                  style={{ borderColor: colors.border }}
+                >
+                  <option value="">None (any provider)</option>
+                  {AVAILABLE_CAPABILITIES.map(cap => (
+                    <option key={cap} value={cap}>{cap}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.requires_rooms}
+                    onChange={(e) => setFormData(prev => ({ ...prev, requires_rooms: e.target.checked }))}
+                  />
+                  <span className="text-sm">Requires Rooms</span>
+                </label>
+
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.show_on_main_calendar}
+                    onChange={(e) => setFormData(prev => ({ ...prev, show_on_main_calendar: e.target.checked }))}
+                  />
+                  <span className="text-sm">Show on Main Calendar</span>
+                </label>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={editingService ? handleUpdate : handleCreate}
+                  className="px-6 py-2 rounded text-white font-medium"
+                  style={{ backgroundColor: colors.primaryBlue }}
+                >
+                  {editingService ? 'Save Changes' : 'Create Service'}
+                </button>
+                <button
+                  onClick={() => { setIsCreating(false); setEditingService(null); resetForm(); }}
+                  className="px-6 py-2 rounded border font-medium"
+                  style={{ borderColor: colors.border }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Services Table */}
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr style={{ backgroundColor: colors.primaryBlue }}>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium">Name</th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium">Time Block</th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium">Required Capability</th>
+              <th className="px-4 py-3 text-center text-white text-sm font-medium">Rooms</th>
+              <th className="px-4 py-3 text-center text-white text-sm font-medium">On Calendar</th>
+              <th className="px-4 py-3 text-right text-white text-sm font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {services.map((service, idx) => (
+              <tr
+                key={service.id}
+                className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
+              >
+                <td className="px-4 py-3 font-medium" style={{ color: colors.primaryBlue }}>
+                  {service.name}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className="px-2 py-1 rounded text-xs font-medium"
+                    style={{
+                      backgroundColor: service.time_block === 'BOTH' ? colors.teal : colors.lightBlue,
+                      color: 'white'
+                    }}
+                  >
+                    {service.time_block}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {service.required_capability || '-'}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  {service.requires_rooms ? 'Yes' : '-'}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  {service.show_on_main_calendar ? 'Yes' : 'No'}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => startEdit(service)}
+                    className="px-3 py-1 rounded text-sm mr-2"
+                    style={{ backgroundColor: colors.lightBlue, color: 'white' }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(service.id)}
+                    className="px-3 py-1 rounded text-sm"
+                    style={{ backgroundColor: colors.ptoRed, color: 'white' }}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

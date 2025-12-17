@@ -3,6 +3,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Service, Provider, ScheduleAssignment } from '@/lib/types';
+import { Holiday, getHolidaysInRange, isInpatientService } from '@/lib/holidays';
+import ApplyTemplateModal from './ApplyTemplateModal';
+import AlternatingTemplateModal from './AlternatingTemplateModal';
+import SaveTemplateModal from './SaveTemplateModal';
 
 // Mount Sinai Colors
 const colors = {
@@ -12,6 +16,8 @@ const colors = {
   lightGray: '#F5F5F5',
   border: '#E5E7EB',
   ptoRed: '#DC2626',
+  holidayPurple: '#7C3AED',
+  holidayBgLight: '#EDE9FE',
 };
 
 type ViewMode = 'service' | 'provider';
@@ -42,6 +48,14 @@ export default function MainCalendar() {
     date: string;
     timeBlock: string;
   } | null>(null);
+
+  // Holidays
+  const [holidays, setHolidays] = useState<Map<string, Holiday>>(new Map());
+
+  // Template modals
+  const [showApplyTemplateModal, setShowApplyTemplateModal] = useState(false);
+  const [showAlternatingModal, setShowAlternatingModal] = useState(false);
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
 
   // Calculate date range based on time frame
   const dateRange = useMemo(() => {
@@ -76,6 +90,9 @@ export default function MainCalendar() {
   useEffect(() => {
     if (dateRange.length > 0) {
       fetchData();
+      // Load holidays for the date range
+      const holidayMap = getHolidaysInRange(dateRange[0], dateRange[dateRange.length - 1]);
+      setHolidays(holidayMap);
     }
   }, [dateRange]);
 
@@ -162,12 +179,15 @@ export default function MainCalendar() {
     return { current, max: 14, providers: providerInitials };
   };
 
-  // Get color for room capacity
-  const getRoomCapacityColor = (current: number, max: number) => {
-    const ratio = current / max;
-    if (ratio <= 0.7) return '#22C55E'; // Green
-    if (ratio <= 0.9) return '#EAB308'; // Yellow
-    return '#EF4444'; // Red
+  // Get color for room capacity (date-aware for Wed/Thu PM extended limit)
+  const getRoomCapacityColor = (current: number, date: string, timeBlock: string) => {
+    const dayOfWeek = new Date(date + 'T00:00:00').getDay(); // 0=Sun, 3=Wed, 4=Thu
+    const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && timeBlock === 'PM';
+    const maxGreen = isExtendedDay ? 15 : 14;
+
+    if (current < 12) return '#EAB308'; // Yellow - under-staffed
+    if (current <= maxGreen) return '#22C55E'; // Green - optimal
+    return '#EF4444'; // Red - over capacity
   };
 
   // Navigation handlers
@@ -211,6 +231,15 @@ export default function MainCalendar() {
     date: string,
     timeBlock: string
   ) => {
+    // Check if date is a holiday
+    const holiday = holidays.get(date);
+    if (holiday) {
+      const service = services.find(s => s.id === serviceId);
+      if (!service || !isInpatientService(service.name)) {
+        alert(`Cannot schedule on ${holiday.name}. Only Inpatient services (Consults, Burgundy) are allowed on holidays.`);
+        return;
+      }
+    }
     setSelectedCell({ serviceId, date, timeBlock });
   };
 
@@ -221,6 +250,33 @@ export default function MainCalendar() {
     const provider = providers.find((p) => p.id === providerId);
 
     if (!service || !provider) return;
+
+    // Check for PTO conflicts (time-block specific - allows half-day PTO)
+    const timeBlocksToCheck = selectedCell.timeBlock === 'BOTH'
+      ? ['AM', 'PM', 'BOTH']
+      : [selectedCell.timeBlock, 'BOTH'];
+
+    const providerAssignmentsForTimeBlock = assignments.filter(
+      (a) =>
+        a.provider_id === providerId &&
+        a.date === selectedCell.date &&
+        timeBlocksToCheck.includes(a.time_block)
+    );
+
+    const hasPTOForTimeBlock = providerAssignmentsForTimeBlock.some(
+      (a) => a.is_pto || services.find((s) => s.id === a.service_id)?.name === 'PTO'
+    );
+    const isAssigningPTO = service.name === 'PTO';
+
+    if (hasPTOForTimeBlock && !isAssigningPTO) {
+      alert(`${provider.name} has PTO for this time block and cannot be assigned work.`);
+      return;
+    }
+
+    if (isAssigningPTO && providerAssignmentsForTimeBlock.some((a) => !a.is_pto && services.find((s) => s.id === a.service_id)?.name !== 'PTO')) {
+      alert(`${provider.name} has work assignments for this time block. Remove them before assigning PTO.`);
+      return;
+    }
 
     if (
       service.required_capability &&
@@ -334,6 +390,12 @@ export default function MainCalendar() {
                   Provider View
                 </button>
               </div>
+              <Link
+                href="/admin"
+                className="px-4 py-2 rounded-md text-sm font-medium bg-white/20 text-white hover:bg-white/30 transition-colors"
+              >
+                Admin Panel
+              </Link>
             </div>
           </div>
         </div>
@@ -390,6 +452,36 @@ export default function MainCalendar() {
               {getMonthYear()}
             </span>
           </div>
+
+          {/* Template Actions - Show in week view */}
+          {timeFrame === 'week' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowSaveTemplateModal(true)}
+                className="px-3 py-2 rounded text-sm font-medium border hover:bg-gray-50 transition-colors"
+                style={{ borderColor: colors.border, color: colors.primaryBlue }}
+                title="Save current week as a template"
+              >
+                Save as Template
+              </button>
+              <button
+                onClick={() => setShowApplyTemplateModal(true)}
+                className="px-3 py-2 rounded text-sm font-medium text-white hover:opacity-90 transition-colors"
+                style={{ backgroundColor: colors.teal }}
+                title="Apply a template to selected dates"
+              >
+                Apply Template
+              </button>
+              <button
+                onClick={() => setShowAlternatingModal(true)}
+                className="px-3 py-2 rounded text-sm font-medium text-white hover:opacity-90 transition-colors"
+                style={{ backgroundColor: '#7C3AED' }}
+                title="Apply alternating templates (Week A/B)"
+              >
+                Alternating
+              </button>
+            </div>
+          )}
 
           {/* Provider View Filters */}
           {viewMode === 'provider' && (
@@ -454,6 +546,7 @@ export default function MainCalendar() {
             handleCellClick={handleCellClick}
             isFullDayService={isFullDayService}
             colors={colors}
+            holidays={holidays}
           />
         ) : (
           <ProviderView
@@ -467,6 +560,7 @@ export default function MainCalendar() {
             getDayOfWeek={getDayOfWeek}
             isFullDayService={isFullDayService}
             colors={colors}
+            holidays={holidays}
           />
         )}
       </main>
@@ -588,6 +682,36 @@ export default function MainCalendar() {
         );
       })()}
 
+      {/* Template Modals */}
+      <ApplyTemplateModal
+        isOpen={showApplyTemplateModal}
+        onClose={() => setShowApplyTemplateModal(false)}
+        onApply={(result) => {
+          fetchData();
+          alert(`Template applied! Created ${result.created} assignments.`);
+        }}
+        defaultStartDate={dateRange[0]}
+        defaultEndDate={dateRange[dateRange.length - 1]}
+      />
+
+      <AlternatingTemplateModal
+        isOpen={showAlternatingModal}
+        onClose={() => setShowAlternatingModal(false)}
+        onApply={(result) => {
+          fetchData();
+          alert(`Alternating templates applied! Created ${result.created} assignments.`);
+        }}
+      />
+
+      <SaveTemplateModal
+        isOpen={showSaveTemplateModal}
+        onClose={() => setShowSaveTemplateModal(false)}
+        onSave={(result) => {
+          alert(`Template "${result.template.name}" saved with ${result.sourceWeek.assignmentCount} assignments!`);
+        }}
+        weekStartDate={dateRange[0]}
+      />
+
       {/* Footer */}
       <footer className="py-4 px-4 border-t mt-8" style={{ borderColor: colors.border }}>
         <div className="max-w-full mx-auto text-center text-sm text-gray-500">
@@ -607,12 +731,13 @@ interface ServiceViewProps {
   timeFrame: TimeFrame;
   getAssignmentsForCell: (serviceId: string, date: string, timeBlock: string) => ScheduleAssignment[];
   getRoomCapacity: (date: string, timeBlock: string) => { current: number; max: number; providers: (string | undefined)[] };
-  getRoomCapacityColor: (current: number, max: number) => string;
+  getRoomCapacityColor: (current: number, date: string, timeBlock: string) => string;
   formatDate: (dateStr: string) => string;
   getDayOfWeek: (dateStr: string) => string;
   handleCellClick: (serviceId: string, date: string, timeBlock: string) => void;
   isFullDayService: (serviceName: string) => boolean;
   colors: typeof colors;
+  holidays: Map<string, Holiday>;
 }
 
 // Service grouping configuration
@@ -634,6 +759,7 @@ function ServiceView({
   getDayOfWeek,
   handleCellClick,
   colors,
+  holidays,
 }: ServiceViewProps) {
   // Helper to find service by name
   const findService = (name: string) => services.find((s) => s.name === name);
@@ -646,12 +772,16 @@ function ServiceView({
     return { current, max: 14, providers: providerInitials };
   };
 
-  // Helper to get room capacity background color
-  const getRoomCapacityBgColor = (current: number) => {
+  // Helper to get room capacity background color (date-aware for Wed/Thu PM)
+  const getRoomCapacityBgColor = (current: number, date: string, timeBlock: string) => {
+    const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+    const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && timeBlock === 'PM';
+    const maxGreen = isExtendedDay ? 15 : 14;
+
     if (current === 0) return '#F9FAFB'; // Light gray - no coverage
-    if (current <= 14) return '#D1FAE5'; // Light green - good
-    if (current <= 16) return '#FEF3C7'; // Light yellow - slightly over
-    return '#FEE2E2'; // Light red - way over
+    if (current < 12) return '#FEF3C7'; // Light yellow - under-staffed
+    if (current <= maxGreen) return '#D1FAE5'; // Light green - optimal
+    return '#FEE2E2'; // Light red - over capacity
   };
 
   // Build the ordered list of rows for the service view
@@ -789,12 +919,47 @@ function ServiceView({
 
     const cellAssignments = getAssignmentsForCell(row.serviceId, date, row.timeBlock);
     const isPTO = row.name === 'PTO';
+    const holiday = holidays.get(date);
+    const isInpatient = isInpatientService(row.name);
 
-    // Special handling for Rooms rows
+    // For holidays on non-inpatient services, show "CLOSED"
+    if (holiday && !isInpatient) {
+      return (
+        <td
+          key={date}
+          className="border px-2 py-2 text-center"
+          style={{ borderColor: colors.border, backgroundColor: colors.holidayBgLight }}
+        >
+          <div className="text-xs font-medium" style={{ color: colors.holidayPurple }}>
+            CLOSED
+          </div>
+        </td>
+      );
+    }
+
+    // Special handling for Rooms rows (also closed on holidays)
     if (row.isRooms) {
+      if (holiday) {
+        return (
+          <td
+            key={date}
+            className="border px-2 py-2 text-center"
+            style={{ borderColor: colors.border, backgroundColor: colors.holidayBgLight }}
+          >
+            <div className="text-xs font-medium" style={{ color: colors.holidayPurple }}>
+              CLOSED
+            </div>
+          </td>
+        );
+      }
+
       const { current, max, providers } = getRoomCapacityForService(row.serviceId, date, row.timeBlock);
-      const bgColor = getRoomCapacityBgColor(current);
-      const textColor = current === 0 ? '#9CA3AF' : current <= 14 ? '#059669' : current <= 16 ? '#D97706' : '#DC2626';
+      const bgColor = getRoomCapacityBgColor(current, date, row.timeBlock);
+      // Date-aware text color for Wed/Thu PM extended limit
+      const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+      const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && row.timeBlock === 'PM';
+      const maxGreen = isExtendedDay ? 15 : 14;
+      const textColor = current === 0 ? '#9CA3AF' : current < 12 ? '#D97706' : current <= maxGreen ? '#059669' : '#DC2626';
 
       return (
         <td
@@ -813,11 +978,14 @@ function ServiceView({
       );
     }
 
+    // Normal cell rendering (with holiday background for inpatient services on holidays)
+    const bgStyle = holiday && isInpatient ? colors.holidayBgLight : undefined;
+
     return (
       <td
         key={date}
         className="border px-2 py-2 cursor-pointer hover:bg-blue-50 transition-colors text-center"
-        style={{ borderColor: colors.border }}
+        style={{ borderColor: colors.border, backgroundColor: bgStyle }}
         onClick={() => handleCellClick(row.serviceId!, date, row.timeBlock!)}
       >
         {cellAssignments.length > 0 ? (
@@ -974,8 +1142,12 @@ function ServiceView({
               // Rooms handling for day view
               if (row.isRooms) {
                 const { current, max, providers } = getRoomCapacityForService(row.serviceId, date, row.timeBlock!);
-                const bgColor = getRoomCapacityBgColor(current);
-                const textColor = current === 0 ? '#9CA3AF' : current <= 14 ? '#059669' : current <= 16 ? '#D97706' : '#DC2626';
+                const bgColor = getRoomCapacityBgColor(current, date, row.timeBlock!);
+                // Date-aware text color for Wed/Thu PM extended limit
+                const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+                const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && row.timeBlock === 'PM';
+                const maxGreen = isExtendedDay ? 15 : 14;
+                const textColor = current === 0 ? '#9CA3AF' : current < 12 ? '#D97706' : current <= maxGreen ? '#059669' : '#DC2626';
 
                 return (
                   <tr key={row.name} className="hover:bg-gray-50">
@@ -1113,20 +1285,42 @@ function ServiceView({
               >
                 Service
               </th>
-              {dateRange.map((date) => (
-                <th
-                  key={date}
-                  className="border px-3 py-2 min-w-[120px]"
-                  style={{ backgroundColor: colors.lightGray, borderColor: colors.border }}
-                >
-                  <div className="text-center">
-                    <div className="font-semibold text-sm" style={{ color: colors.primaryBlue }}>
-                      {getDayOfWeek(date)}
+              {dateRange.map((date) => {
+                const holiday = holidays.get(date);
+                return (
+                  <th
+                    key={date}
+                    className="border px-3 py-2 min-w-[120px]"
+                    style={{
+                      backgroundColor: holiday ? colors.holidayBgLight : colors.lightGray,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <div className="text-center">
+                      <div
+                        className="font-semibold text-sm"
+                        style={{ color: holiday ? colors.holidayPurple : colors.primaryBlue }}
+                      >
+                        {getDayOfWeek(date)}
+                      </div>
+                      <div
+                        className="text-xs"
+                        style={{ color: holiday ? colors.holidayPurple : '#4B5563' }}
+                      >
+                        {formatDate(date)}
+                      </div>
+                      {holiday && (
+                        <div
+                          className="text-xs font-medium mt-1"
+                          style={{ color: colors.holidayPurple }}
+                        >
+                          {holiday.name}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-xs text-gray-600">{formatDate(date)}</div>
-                  </div>
-                </th>
-              ))}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -1250,6 +1444,7 @@ interface ProviderViewProps {
   getDayOfWeek: (dateStr: string) => string;
   isFullDayService: (serviceName: string) => boolean;
   colors: typeof colors;
+  holidays: Map<string, Holiday>;
 }
 
 function ProviderView({
@@ -1262,6 +1457,7 @@ function ProviderView({
   getDayOfWeek,
   isFullDayService,
   colors,
+  holidays,
 }: ProviderViewProps) {
   const renderProviderCell = (provider: Provider, date: string, timeBlock?: string) => {
     const providerAssignments = getProviderAssignments(provider.id, date, timeBlock);
@@ -1360,20 +1556,42 @@ function ProviderView({
               >
                 Provider
               </th>
-              {dateRange.map((date) => (
-                <th
-                  key={date}
-                  className="border px-2 py-2 min-w-[100px]"
-                  style={{ backgroundColor: colors.lightGray, borderColor: colors.border }}
-                >
-                  <div className="text-center">
-                    <div className="font-semibold text-xs" style={{ color: colors.primaryBlue }}>
-                      {getDayOfWeek(date)}
+              {dateRange.map((date) => {
+                const holiday = holidays.get(date);
+                return (
+                  <th
+                    key={date}
+                    className="border px-2 py-2 min-w-[100px]"
+                    style={{
+                      backgroundColor: holiday ? colors.holidayBgLight : colors.lightGray,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <div className="text-center">
+                      <div
+                        className="font-semibold text-xs"
+                        style={{ color: holiday ? colors.holidayPurple : colors.primaryBlue }}
+                      >
+                        {getDayOfWeek(date)}
+                      </div>
+                      <div
+                        className="text-xs"
+                        style={{ color: holiday ? colors.holidayPurple : '#4B5563' }}
+                      >
+                        {formatDate(date)}
+                      </div>
+                      {holiday && (
+                        <div
+                          className="text-xs font-medium mt-1"
+                          style={{ color: colors.holidayPurple }}
+                        >
+                          {holiday.name}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-xs text-gray-600">{formatDate(date)}</div>
-                  </div>
-                </th>
-              ))}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -1390,11 +1608,27 @@ function ProviderView({
                     <div className="text-xs text-gray-500 truncate max-w-[100px]">{provider.name}</div>
                   </Link>
                 </td>
-                {dateRange.map((date) => (
-                  <td key={date} className="border px-1 py-1" style={{ borderColor: colors.border }}>
-                    {renderProviderCell(provider, date)}
-                  </td>
-                ))}
+                {dateRange.map((date) => {
+                  const holiday = holidays.get(date);
+                  return (
+                    <td
+                      key={date}
+                      className="border px-1 py-1"
+                      style={{
+                        borderColor: colors.border,
+                        backgroundColor: holiday ? colors.holidayBgLight : undefined,
+                      }}
+                    >
+                      {holiday ? (
+                        <div className="text-xs font-medium text-center" style={{ color: colors.holidayPurple }}>
+                          HOLIDAY
+                        </div>
+                      ) : (
+                        renderProviderCell(provider, date)
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
