@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Service } from '@/lib/types';
+import { Service, Provider } from '@/lib/types';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -21,9 +21,11 @@ const AVAILABLE_CAPABILITIES = [
 
 export default function ServicesAdminPage() {
   const [services, setServices] = useState<Service[]>([]);
+  const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [viewingEligible, setViewingEligible] = useState<Service | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     time_block: 'AM' as 'AM' | 'PM' | 'BOTH',
@@ -34,6 +36,7 @@ export default function ServicesAdminPage() {
 
   useEffect(() => {
     fetchServices();
+    fetchProviders();
   }, []);
 
   const fetchServices = async () => {
@@ -47,6 +50,29 @@ export default function ServicesAdminPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchProviders = async () => {
+    try {
+      const response = await fetch('/api/providers');
+      const data = await response.json();
+      setProviders(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching providers:', error);
+    }
+  };
+
+  const getEligibleProviders = (service: Service) => {
+    if (!service.required_capability) {
+      return providers;
+    }
+    return providers.filter(p => p.capabilities.includes(service.required_capability!));
+  };
+
+  const getEligibilityColor = (count: number) => {
+    if (count === 0) return colors.ptoRed;
+    if (count < 5) return '#D97706'; // Yellow/Orange
+    return '#059669'; // Green
   };
 
   const handleCreate = async () => {
@@ -242,6 +268,66 @@ export default function ServicesAdminPage() {
         </div>
       )}
 
+      {/* View Eligible Providers Modal */}
+      {viewingEligible && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-auto">
+            <h3 className="text-xl font-bold mb-2" style={{ color: colors.primaryBlue }}>
+              Eligible Providers for {viewingEligible.name}
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              {viewingEligible.required_capability
+                ? `Requires capability: ${viewingEligible.required_capability}`
+                : 'No capability required - all providers eligible'}
+            </p>
+
+            <div className="space-y-2 mb-4">
+              {getEligibleProviders(viewingEligible).map((provider) => (
+                <div
+                  key={provider.id}
+                  className="flex items-center justify-between p-2 rounded"
+                  style={{ backgroundColor: '#F3F4F6' }}
+                >
+                  <div>
+                    <span className="font-bold" style={{ color: colors.primaryBlue }}>
+                      {provider.initials}
+                    </span>
+                    <span className="text-gray-600 ml-2">{provider.name}</span>
+                  </div>
+                  <span
+                    className="px-2 py-0.5 rounded text-xs text-white"
+                    style={{
+                      backgroundColor:
+                        provider.role === 'fellow' ? colors.teal :
+                        provider.role === 'pa' ? '#7C3AED' :
+                        provider.role === 'np' ? '#059669' :
+                        colors.lightBlue
+                    }}
+                  >
+                    {provider.role === 'fellow' ? 'Fellow' :
+                     provider.role === 'pa' ? 'PA' :
+                     provider.role === 'np' ? 'NP' : 'MD'}
+                  </span>
+                </div>
+              ))}
+              {getEligibleProviders(viewingEligible).length === 0 && (
+                <p className="text-center text-gray-500 py-4">
+                  No providers have this capability
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={() => setViewingEligible(null)}
+              className="w-full px-4 py-2 rounded text-white font-medium"
+              style={{ backgroundColor: colors.primaryBlue }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Services Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="w-full">
@@ -250,58 +336,83 @@ export default function ServicesAdminPage() {
               <th className="px-4 py-3 text-left text-white text-sm font-medium">Name</th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium">Time Block</th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium">Required Capability</th>
+              <th className="px-4 py-3 text-center text-white text-sm font-medium">Eligible</th>
               <th className="px-4 py-3 text-center text-white text-sm font-medium">Rooms</th>
-              <th className="px-4 py-3 text-center text-white text-sm font-medium">On Calendar</th>
+              <th className="px-4 py-3 text-center text-white text-sm font-medium">Calendar</th>
               <th className="px-4 py-3 text-right text-white text-sm font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {services.map((service, idx) => (
-              <tr
-                key={service.id}
-                className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
-              >
-                <td className="px-4 py-3 font-medium" style={{ color: colors.primaryBlue }}>
-                  {service.name}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className="px-2 py-1 rounded text-xs font-medium"
-                    style={{
-                      backgroundColor: service.time_block === 'BOTH' ? colors.teal : colors.lightBlue,
-                      color: 'white'
-                    }}
-                  >
-                    {service.time_block}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {service.required_capability || '-'}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  {service.requires_rooms ? 'Yes' : '-'}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  {service.show_on_main_calendar ? 'Yes' : 'No'}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => startEdit(service)}
-                    className="px-3 py-1 rounded text-sm mr-2"
-                    style={{ backgroundColor: colors.lightBlue, color: 'white' }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(service.id)}
-                    className="px-3 py-1 rounded text-sm"
-                    style={{ backgroundColor: colors.ptoRed, color: 'white' }}
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {services.map((service, idx) => {
+              const eligibleProviders = getEligibleProviders(service);
+              const eligibleCount = eligibleProviders.length;
+
+              return (
+                <tr
+                  key={service.id}
+                  className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
+                >
+                  <td className="px-4 py-3 font-medium" style={{ color: colors.primaryBlue }}>
+                    {service.name}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className="px-2 py-1 rounded text-xs font-medium"
+                      style={{
+                        backgroundColor: service.time_block === 'BOTH' ? colors.teal : colors.lightBlue,
+                        color: 'white'
+                      }}
+                    >
+                      {service.time_block}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm">
+                    {service.required_capability ? (
+                      <span
+                        className="px-2 py-1 rounded text-xs"
+                        style={{ backgroundColor: '#E6F2FF', color: colors.primaryBlue }}
+                      >
+                        {service.required_capability}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 italic">None required</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      onClick={() => setViewingEligible(service)}
+                      className="px-2 py-1 rounded text-xs font-medium text-white hover:opacity-80"
+                      style={{ backgroundColor: getEligibilityColor(eligibleCount) }}
+                      title="Click to view eligible providers"
+                    >
+                      {eligibleCount} provider{eligibleCount !== 1 ? 's' : ''}
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 text-center text-sm">
+                    {service.requires_rooms ? 'Yes' : '-'}
+                  </td>
+                  <td className="px-4 py-3 text-center text-sm">
+                    {service.show_on_main_calendar ? 'Yes' : 'No'}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => startEdit(service)}
+                      className="px-3 py-1 rounded text-sm mr-2"
+                      style={{ backgroundColor: colors.lightBlue, color: 'white' }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(service.id)}
+                      className="px-3 py-1 rounded text-sm"
+                      style={{ backgroundColor: colors.ptoRed, color: 'white' }}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

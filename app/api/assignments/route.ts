@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { isHoliday, isInpatientService } from '@/lib/holidays';
+import { checkProviderAvailability } from '@/lib/availability';
 
 export async function GET(request: Request) {
   try {
@@ -87,6 +88,30 @@ export async function POST(request: Request) {
         { error: 'Provider has work assignments for this time block. Remove them before assigning PTO.' },
         { status: 400 }
       );
+    }
+
+    // Check availability rules (skip if force_override is set)
+    if (!body.force_override) {
+      const availabilityCheck = await checkProviderAvailability(
+        body.provider_id,
+        body.service_id,
+        body.date,
+        body.time_block
+      );
+
+      if (!availabilityCheck.allowed) {
+        if (availabilityCheck.enforcement === 'hard') {
+          return NextResponse.json(
+            {
+              error: `Provider availability conflict: ${availabilityCheck.reason}`,
+              type: 'availability_hard_block'
+            },
+            { status: 400 }
+          );
+        }
+        // For 'warn' enforcement, we still create but include warning in response
+        // Frontend will have already shown confirmation dialog
+      }
     }
 
     const { data, error } = await supabase

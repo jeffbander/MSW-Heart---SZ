@@ -2,11 +2,13 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Service, Provider, ScheduleAssignment } from '@/lib/types';
+import { Service, Provider, ScheduleAssignment, AvailabilityViolation, ProviderAvailabilityRule } from '@/lib/types';
 import { Holiday, getHolidaysInRange, isInpatientService } from '@/lib/holidays';
 import ApplyTemplateModal from './ApplyTemplateModal';
 import AlternatingTemplateModal from './AlternatingTemplateModal';
 import SaveTemplateModal from './SaveTemplateModal';
+import AvailabilityWarningModal from './AvailabilityWarningModal';
+import PTOConflictModal from './PTOConflictModal';
 
 // Mount Sinai Colors
 const colors = {
@@ -57,6 +59,31 @@ export default function MainCalendar() {
   const [showAlternatingModal, setShowAlternatingModal] = useState(false);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
 
+  // Provider search in assignment modal
+  const [providerSearchQuery, setProviderSearchQuery] = useState('');
+
+  // Availability warning modal
+  const [availabilityWarnings, setAvailabilityWarnings] = useState<AvailabilityViolation[]>([]);
+  const [pendingAssignment, setPendingAssignment] = useState<{
+    providerId: string;
+    serviceId: string;
+    date: string;
+    timeBlock: string;
+  } | null>(null);
+
+  // Availability rules for filtering suggestions
+  const [availabilityRules, setAvailabilityRules] = useState<ProviderAvailabilityRule[]>([]);
+
+  // PTO conflict modal
+  const [ptoConflictModal, setPtoConflictModal] = useState<{
+    provider: Provider;
+    date: string;
+    ptoTimeBlocks: string[];
+  } | null>(null);
+
+  // Track overridden conflicts (session only - resets on page refresh)
+  const [overriddenConflicts, setOverriddenConflicts] = useState<Set<string>>(new Set());
+
   // Calculate date range based on time frame
   const dateRange = useMemo(() => {
     const dates: string[] = [];
@@ -95,6 +122,20 @@ export default function MainCalendar() {
       setHolidays(holidayMap);
     }
   }, [dateRange]);
+
+  // Fetch availability rules for filtering suggestions
+  useEffect(() => {
+    async function fetchAvailabilityRules() {
+      try {
+        const response = await fetch('/api/availability/rules');
+        const data = await response.json();
+        setAvailabilityRules(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error('Error fetching availability rules:', error);
+      }
+    }
+    fetchAvailabilityRules();
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -188,6 +229,106 @@ export default function MainCalendar() {
     if (current < 12) return '#EAB308'; // Yellow - under-staffed
     if (current <= maxGreen) return '#22C55E'; // Green - optimal
     return '#EF4444'; // Red - over capacity
+  };
+
+  // Get PTO time blocks for a provider on a specific date
+  const getProviderPTOForDate = (providerId: string, date: string): string[] => {
+    const ptoAssignments = assignments.filter(a =>
+      a.provider_id === providerId &&
+      a.date === date &&
+      (a.is_pto || services.find(s => s.id === a.service_id)?.name === 'PTO')
+    );
+    return ptoAssignments.map(a => a.time_block);
+  };
+
+  // Get conflicting assignments for a provider who has PTO
+  const getConflictingAssignmentsForPTO = (
+    providerId: string,
+    date: string,
+    ptoTimeBlocks: string[]
+  ): ScheduleAssignment[] => {
+    const timeBlocksToCheck = ptoTimeBlocks.includes('BOTH')
+      ? ['AM', 'PM', 'BOTH']
+      : [...ptoTimeBlocks, 'BOTH'];
+
+    return assignments.filter(a =>
+      a.provider_id === providerId &&
+      a.date === date &&
+      timeBlocksToCheck.includes(a.time_block) &&
+      !a.is_pto &&
+      services.find(s => s.id === a.service_id)?.name !== 'PTO'
+    );
+  };
+
+  // Helper to create override key for PTO conflicts
+  const getOverrideKey = (providerId: string, date: string) => `${providerId}-${date}`;
+
+  // Handle override of PTO conflict
+  const handleOverrideConflict = (providerId: string, date: string) => {
+    setOverriddenConflicts(prev => new Set(prev).add(getOverrideKey(providerId, date)));
+    setPtoConflictModal(null);
+  };
+
+  // Handle clicking on a provider with PTO conflicts
+  const handlePTOConflictClick = (provider: Provider, date: string, ptoTimeBlocks: string[]) => {
+    setPtoConflictModal({ provider, date, ptoTimeBlocks });
+  };
+
+  // Helper to check if provider has availability restriction for a given service/day/time
+  const getProviderAvailability = (providerId: string, serviceId: string, dayOfWeek: number, timeBlock: string) => {
+    const rule = availabilityRules.find(r =>
+      r.provider_id === providerId &&
+      r.service_id === serviceId &&
+      r.day_of_week === dayOfWeek &&
+      (r.time_block === timeBlock || r.time_block === 'BOTH')
+    );
+    return rule ? rule.enforcement : null; // null = available, 'warn' = soft warning, 'hard' = blocked
+  };
+
+  // Get room suggestions for reaching target
+  const getRoomSuggestions = (date: string, timeBlock: string, assignedProviderIds: string[]) => {
+    const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+    const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && timeBlock === 'PM';
+    const target = isExtendedDay ? 15 : 14;
+
+    // Find the rooms service for this time block
+    const roomsServiceName = timeBlock === 'AM' ? 'Rooms AM' : 'Rooms PM';
+    const roomsService = services.find(s => s.name === roomsServiceName);
+    if (!roomsService) return { needed: 0, target, currentRooms: 0, suggestions: [] };
+
+    const currentAssignments = getAssignmentsForCell(roomsService.id, date, timeBlock);
+    const currentRooms = currentAssignments.reduce((sum, a) => sum + (a.room_count || 0), 0);
+    const needed = Math.max(0, target - currentRooms);
+
+    if (needed === 0) return { needed: 0, target, currentRooms, suggestions: [] };
+
+    // Get available providers with Rooms capability who aren't assigned and don't have PTO
+    // Filter out providers with hard blocks and mark those with soft warnings
+    const available = providers
+      .filter(p => {
+        if (!p.capabilities.includes('Rooms')) return false;
+        if (assignedProviderIds.includes(p.id)) return false;
+        if (getProviderPTOForDate(p.id, date).some(tb => tb === timeBlock || tb === 'BOTH')) return false;
+
+        // Check availability rules - exclude hard blocks
+        const availability = getProviderAvailability(p.id, roomsService.id, dayOfWeek, timeBlock);
+        if (availability === 'hard') return false;
+
+        return true;
+      })
+      .map(p => ({
+        ...p,
+        hasWarning: getProviderAvailability(p.id, roomsService.id, dayOfWeek, timeBlock) === 'warn'
+      }))
+      .sort((a, b) => {
+        // Sort providers without warnings first, then by room count
+        if (a.hasWarning !== b.hasWarning) {
+          return a.hasWarning ? 1 : -1;
+        }
+        return b.default_room_count - a.default_room_count;
+      });
+
+    return { needed, target, currentRooms, suggestions: available };
   };
 
   // Navigation handlers
@@ -302,6 +443,50 @@ export default function MainCalendar() {
       return;
     }
 
+    // Check availability rules
+    try {
+      const availResponse = await fetch('/api/availability/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider_id: providerId,
+          service_id: selectedCell.serviceId,
+          date: selectedCell.date,
+          time_block: selectedCell.timeBlock
+        })
+      });
+
+      const availResult = await availResponse.json();
+
+      if (!availResult.allowed) {
+        if (availResult.enforcement === 'hard') {
+          alert(`Cannot assign ${provider.name}: ${availResult.reason}`);
+          return;
+        } else {
+          // Show warning modal for soft block
+          setAvailabilityWarnings([{
+            provider_id: providerId,
+            provider_initials: provider.initials,
+            date: selectedCell.date,
+            time_block: selectedCell.timeBlock,
+            service_name: service.name,
+            enforcement: 'warn',
+            reason: availResult.reason
+          }]);
+          setPendingAssignment({
+            providerId,
+            serviceId: selectedCell.serviceId,
+            date: selectedCell.date,
+            timeBlock: selectedCell.timeBlock
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Error checking availability:', error);
+      // Continue with assignment if check fails
+    }
+
     try {
       const response = await fetch('/api/assignments', {
         method: 'POST',
@@ -322,6 +507,42 @@ export default function MainCalendar() {
     } catch (error) {
       console.error('Error assigning provider:', error);
     }
+  };
+
+  // Handle confirmation of assignment despite availability warning
+  const handleConfirmAssignment = async () => {
+    if (!pendingAssignment) return;
+
+    const service = services.find((s) => s.id === pendingAssignment.serviceId);
+    const provider = providers.find((p) => p.id === pendingAssignment.providerId);
+
+    if (!service || !provider) return;
+
+    try {
+      const response = await fetch('/api/assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          service_id: pendingAssignment.serviceId,
+          provider_id: pendingAssignment.providerId,
+          date: pendingAssignment.date,
+          time_block: pendingAssignment.timeBlock,
+          room_count: service.requires_rooms ? provider.default_room_count : 0,
+          is_pto: service.name === 'PTO',
+          force_override: true
+        }),
+      });
+
+      if (response.ok) {
+        await fetchData();
+      }
+    } catch (error) {
+      console.error('Error assigning provider:', error);
+    }
+
+    setAvailabilityWarnings([]);
+    setPendingAssignment(null);
+    setSelectedCell(null);
   };
 
   const handleRemoveAssignment = async (assignmentId: string) => {
@@ -547,6 +768,12 @@ export default function MainCalendar() {
             isFullDayService={isFullDayService}
             colors={colors}
             holidays={holidays}
+            getProviderPTOForDate={getProviderPTOForDate}
+            getRoomSuggestions={getRoomSuggestions}
+            getConflictingAssignmentsForPTO={getConflictingAssignmentsForPTO}
+            overriddenConflicts={overriddenConflicts}
+            getOverrideKey={getOverrideKey}
+            onPTOConflictClick={handlePTOConflictClick}
           />
         ) : (
           <ProviderView
@@ -586,7 +813,7 @@ export default function MainCalendar() {
         return (
           <div
             className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30"
-            onClick={() => setSelectedCell(null)}
+            onClick={() => { setSelectedCell(null); setProviderSearchQuery(''); }}
           >
             <div
               className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-auto"
@@ -638,28 +865,135 @@ export default function MainCalendar() {
                 </div>
               )}
 
+              {/* Room Suggestions Section */}
+              {service?.requires_rooms && (() => {
+                const assignedIds = cellAssignments.map(a => a.provider_id);
+                const suggestions = getRoomSuggestions(selectedCell.date, selectedCell.timeBlock, assignedIds);
+
+                if (suggestions.needed > 0) {
+                  return (
+                    <div className="mb-4 p-3 rounded" style={{ backgroundColor: '#FEF3C7', border: '1px solid #F59E0B' }}>
+                      <div className="font-semibold text-sm mb-2" style={{ color: '#92400E' }}>
+                        💡 Need {suggestions.needed} more rooms to reach {suggestions.target}
+                      </div>
+                      {suggestions.suggestions.length > 0 ? (
+                        <div className="text-xs" style={{ color: '#92400E' }}>
+                          <span className="font-medium">Suggested providers: </span>
+                          {suggestions.suggestions.slice(0, 5).map((p, i) => (
+                            <span
+                              key={p.id}
+                              style={{ color: p.hasWarning ? '#F59E0B' : '#92400E' }}
+                              title={p.hasWarning ? 'Has availability warning for this time' : undefined}
+                            >
+                              {i > 0 && ', '}
+                              {p.initials} ({p.default_room_count}){p.hasWarning ? ' ⚠️' : ''}
+                            </span>
+                          ))}
+                          {suggestions.suggestions.length > 5 && (
+                            <span className="text-gray-500"> +{suggestions.suggestions.length - 5} more</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs" style={{ color: '#92400E' }}>
+                          No available providers with Rooms capability
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               {availableProviders.length > 0 ? (
                 <div>
                   <h3 className="font-semibold mb-2 text-sm">Add Provider:</h3>
+                  <input
+                    type="text"
+                    placeholder="Search by name or initials..."
+                    value={providerSearchQuery}
+                    onChange={(e) => setProviderSearchQuery(e.target.value)}
+                    className="w-full px-3 py-2 border rounded mb-3 text-sm"
+                    style={{ borderColor: colors.border }}
+                  />
                   <div className="grid grid-cols-2 gap-2 max-h-60 overflow-auto">
-                    {availableProviders.map((provider) => (
-                      <button
-                        key={provider.id}
-                        onClick={() => handleAssignProvider(provider.id)}
-                        className="text-left p-3 border rounded transition-colors hover:shadow-md"
-                        style={{ borderColor: colors.border }}
-                      >
-                        <div className="font-semibold" style={{ color: colors.primaryBlue }}>
-                          {provider.initials}
-                        </div>
-                        <div className="text-sm text-gray-600">{provider.name}</div>
-                        {service?.requires_rooms && (
-                          <div className="text-xs" style={{ color: colors.teal }}>
-                            {provider.default_room_count} rooms
-                          </div>
-                        )}
-                      </button>
-                    ))}
+                    {availableProviders
+                      .filter((p) =>
+                        providerSearchQuery === '' ||
+                        p.name.toLowerCase().includes(providerSearchQuery.toLowerCase()) ||
+                        p.initials.toLowerCase().includes(providerSearchQuery.toLowerCase())
+                      )
+                      .map((provider) => {
+                        const providerPTO = getProviderPTOForDate(provider.id, selectedCell.date);
+                        const hasPTOToday = providerPTO.length > 0;
+                        const ptoLabel = providerPTO.includes('BOTH') ? 'All Day PTO' :
+                          providerPTO.map(tb => `${tb} PTO`).join(', ');
+
+                        // Check availability rules for this provider/service/time
+                        const dayOfWeek = new Date(selectedCell.date + 'T00:00:00').getDay();
+                        const availability = getProviderAvailability(
+                          provider.id,
+                          selectedCell.serviceId,
+                          dayOfWeek,
+                          selectedCell.timeBlock
+                        );
+                        const hasAvailabilityWarning = availability === 'warn';
+                        const hasHardBlock = availability === 'hard';
+
+                        // Determine border and background color
+                        let borderColor = colors.border;
+                        let bgColor = undefined;
+                        if (hasHardBlock) {
+                          borderColor = colors.ptoRed;
+                          bgColor = `${colors.ptoRed}15`;
+                        } else if (hasAvailabilityWarning) {
+                          borderColor = '#F59E0B';
+                          bgColor = '#FEF3C720';
+                        } else if (hasPTOToday) {
+                          borderColor = colors.ptoRed;
+                          bgColor = `${colors.ptoRed}08`;
+                        }
+
+                        return (
+                          <button
+                            key={provider.id}
+                            onClick={() => handleAssignProvider(provider.id)}
+                            className="text-left p-3 border rounded transition-colors hover:shadow-md"
+                            style={{
+                              borderColor: borderColor,
+                              backgroundColor: bgColor,
+                              opacity: hasHardBlock ? 0.6 : 1
+                            }}
+                            disabled={hasHardBlock}
+                            title={hasHardBlock ? 'Provider has a hard block for this time' : undefined}
+                          >
+                            <div className="font-semibold" style={{ color: colors.primaryBlue }}>
+                              {provider.initials}
+                              {hasHardBlock && <span className="ml-1 text-red-600">🚫</span>}
+                            </div>
+                            <div className="text-sm text-gray-600">{provider.name}</div>
+                            {service?.requires_rooms && (
+                              <div className="text-xs" style={{ color: colors.teal }}>
+                                {provider.default_room_count} rooms
+                              </div>
+                            )}
+                            {hasPTOToday && (
+                              <div className="text-xs mt-1 font-medium" style={{ color: colors.ptoRed }}>
+                                ⚠️ {ptoLabel}
+                              </div>
+                            )}
+                            {hasAvailabilityWarning && !hasPTOToday && (
+                              <div className="text-xs mt-1 font-medium" style={{ color: '#F59E0B' }}>
+                                ⚠️ Availability Warning
+                              </div>
+                            )}
+                            {hasHardBlock && (
+                              <div className="text-xs mt-1 font-medium" style={{ color: colors.ptoRed }}>
+                                🚫 Blocked
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
                   </div>
                 </div>
               ) : (
@@ -671,7 +1005,7 @@ export default function MainCalendar() {
               )}
 
               <button
-                onClick={() => setSelectedCell(null)}
+                onClick={() => { setSelectedCell(null); setProviderSearchQuery(''); }}
                 className="mt-4 px-4 py-2 rounded w-full text-white hover:opacity-90"
                 style={{ backgroundColor: colors.primaryBlue }}
               >
@@ -712,6 +1046,46 @@ export default function MainCalendar() {
         weekStartDate={dateRange[0]}
       />
 
+      {/* Availability Warning Modal */}
+      {availabilityWarnings.length > 0 && (
+        <AvailabilityWarningModal
+          warnings={availabilityWarnings}
+          onConfirm={handleConfirmAssignment}
+          onCancel={() => {
+            setAvailabilityWarnings([]);
+            setPendingAssignment(null);
+          }}
+        />
+      )}
+
+      {/* PTO Conflict Modal */}
+      {ptoConflictModal && (
+        <PTOConflictModal
+          provider={ptoConflictModal.provider}
+          date={ptoConflictModal.date}
+          ptoTimeBlocks={ptoConflictModal.ptoTimeBlocks}
+          conflictingAssignments={getConflictingAssignmentsForPTO(
+            ptoConflictModal.provider.id,
+            ptoConflictModal.date,
+            ptoConflictModal.ptoTimeBlocks
+          )}
+          onRemoveAssignment={async (assignmentId) => {
+            await handleRemoveAssignment(assignmentId);
+            // Check if there are still conflicts
+            const remaining = getConflictingAssignmentsForPTO(
+              ptoConflictModal.provider.id,
+              ptoConflictModal.date,
+              ptoConflictModal.ptoTimeBlocks
+            ).filter(a => a.id !== assignmentId);
+            if (remaining.length === 0) {
+              setPtoConflictModal(null);
+            }
+          }}
+          onOverrideAll={() => handleOverrideConflict(ptoConflictModal.provider.id, ptoConflictModal.date)}
+          onClose={() => setPtoConflictModal(null)}
+        />
+      )}
+
       {/* Footer */}
       <footer className="py-4 px-4 border-t mt-8" style={{ borderColor: colors.border }}>
         <div className="max-w-full mx-auto text-center text-sm text-gray-500">
@@ -738,6 +1112,17 @@ interface ServiceViewProps {
   isFullDayService: (serviceName: string) => boolean;
   colors: typeof colors;
   holidays: Map<string, Holiday>;
+  getProviderPTOForDate: (providerId: string, date: string) => string[];
+  getRoomSuggestions: (date: string, timeBlock: string, assignedProviderIds: string[]) => {
+    needed: number;
+    target: number;
+    currentRooms: number;
+    suggestions: (Provider & { hasWarning: boolean })[];
+  };
+  getConflictingAssignmentsForPTO: (providerId: string, date: string, ptoTimeBlocks: string[]) => ScheduleAssignment[];
+  overriddenConflicts: Set<string>;
+  getOverrideKey: (providerId: string, date: string) => string;
+  onPTOConflictClick: (provider: Provider, date: string, ptoTimeBlocks: string[]) => void;
 }
 
 // Service grouping configuration
@@ -752,6 +1137,7 @@ interface ServiceRowConfig {
 
 function ServiceView({
   services,
+  providers,
   dateRange,
   timeFrame,
   getAssignmentsForCell,
@@ -760,6 +1146,12 @@ function ServiceView({
   handleCellClick,
   colors,
   holidays,
+  getProviderPTOForDate,
+  getRoomSuggestions,
+  getConflictingAssignmentsForPTO,
+  overriddenConflicts,
+  getOverrideKey,
+  onPTOConflictClick,
 }: ServiceViewProps) {
   // Helper to find service by name
   const findService = (name: string) => services.find((s) => s.name === name);
@@ -801,21 +1193,21 @@ function ServiceView({
     if (consultsService || burgundyService) {
       rows.push({ type: 'group-header', name: 'INPATIENT' });
 
-      if (consultsService) {
-        rows.push({
-          type: 'service',
-          name: 'Consults',
-          serviceId: consultsService.id,
-          timeBlock: 'AM',
-          indented: true
-        });
-      }
-
       if (burgundyService) {
         rows.push({
           type: 'service',
           name: 'Burgundy',
           serviceId: burgundyService.id,
+          timeBlock: 'AM',
+          indented: true
+        });
+      }
+
+      if (consultsService) {
+        rows.push({
+          type: 'service',
+          name: 'Consults',
+          serviceId: consultsService.id,
           timeBlock: 'AM',
           indented: true
         });
@@ -953,7 +1345,7 @@ function ServiceView({
         );
       }
 
-      const { current, max, providers } = getRoomCapacityForService(row.serviceId, date, row.timeBlock);
+      const { current, max, providers: providerInitials } = getRoomCapacityForService(row.serviceId, date, row.timeBlock);
       const bgColor = getRoomCapacityBgColor(current, date, row.timeBlock);
       // Date-aware text color for Wed/Thu PM extended limit
       const dayOfWeek = new Date(date + 'T00:00:00').getDay();
@@ -961,19 +1353,33 @@ function ServiceView({
       const maxGreen = isExtendedDay ? 15 : 14;
       const textColor = current === 0 ? '#9CA3AF' : current < 12 ? '#D97706' : current <= maxGreen ? '#059669' : '#DC2626';
 
+      // Get room suggestions if under target
+      const cellAssignments = getAssignmentsForCell(row.serviceId, date, row.timeBlock);
+      const assignedIds = cellAssignments.map(a => a.provider_id);
+      const suggestions = getRoomSuggestions(date, row.timeBlock, assignedIds);
+
       return (
         <td
           key={date}
-          className="border px-2 py-2 cursor-pointer hover:opacity-80 transition-colors text-center"
+          className="border px-1 py-1 cursor-pointer hover:opacity-80 transition-colors text-center"
           style={{ borderColor: colors.border, backgroundColor: bgColor }}
           onClick={() => handleCellClick(row.serviceId!, date, row.timeBlock!)}
         >
           <div className="text-xs font-medium" style={{ color: colors.primaryBlue }}>
-            {providers.length > 0 ? providers.join(', ') : '-'}
+            {providerInitials.length > 0 ? providerInitials.join(', ') : '-'}
           </div>
           <div className="text-xs font-semibold" style={{ color: textColor }}>
-            ({current}/{max})
+            ({current}/{maxGreen})
           </div>
+          {suggestions.needed > 0 && current > 0 && (
+            <div className="text-[10px] mt-0.5" style={{ color: '#92400E' }}>
+              +{suggestions.suggestions.slice(0, 2).map(p => (
+                <span key={p.id} style={{ color: p.hasWarning ? '#F59E0B' : '#92400E' }}>
+                  {p.initials}({p.default_room_count}){p.hasWarning ? '!' : ''}
+                </span>
+              )).reduce((prev, curr, i) => i === 0 ? [curr] : [...prev, ', ', curr], [] as React.ReactNode[])}
+            </div>
+          )}
         </td>
       );
     }
@@ -989,8 +1395,72 @@ function ServiceView({
         onClick={() => handleCellClick(row.serviceId!, date, row.timeBlock!)}
       >
         {cellAssignments.length > 0 ? (
-          <div className="text-xs font-medium" style={{ color: isPTO ? colors.ptoRed : colors.primaryBlue }}>
-            {cellAssignments.map((a) => a.provider?.initials).join(', ')}
+          <div className="text-xs font-medium">
+            {cellAssignments.map((a, idx) => {
+              const providerPTO = a.provider?.id ? getProviderPTOForDate(a.provider.id, date) : [];
+              const hasPTOToday = providerPTO.length > 0;
+              const ptoTooltip = hasPTOToday ?
+                (providerPTO.includes('BOTH') ? 'All Day PTO' : providerPTO.map(tb => `${tb} PTO`).join(', ')) : '';
+
+              // For PTO row: check if provider has conflicts in other services
+              if (isPTO && a.provider) {
+                const conflicts = getConflictingAssignmentsForPTO(a.provider.id, date, providerPTO.length > 0 ? providerPTO : [row.timeBlock!]);
+                const isOverridden = overriddenConflicts.has(getOverrideKey(a.provider.id, date));
+                const hasActiveConflicts = conflicts.length > 0 && !isOverridden;
+
+                return (
+                  <span key={a.id}>
+                    {idx > 0 && ', '}
+                    <span
+                      onClick={(e) => {
+                        if (hasActiveConflicts) {
+                          e.stopPropagation();
+                          const provider = providers.find(p => p.id === a.provider_id);
+                          if (provider) {
+                            onPTOConflictClick(provider, date, providerPTO.length > 0 ? providerPTO : [row.timeBlock!]);
+                          }
+                        }
+                      }}
+                      style={{
+                        color: colors.ptoRed,
+                        backgroundColor: hasActiveConflicts ? `${colors.ptoRed}20` : undefined,
+                        padding: hasActiveConflicts ? '1px 3px' : undefined,
+                        borderRadius: hasActiveConflicts ? '2px' : undefined,
+                        cursor: hasActiveConflicts ? 'pointer' : 'default',
+                        textDecoration: hasActiveConflicts ? 'underline' : 'none',
+                      }}
+                      title={hasActiveConflicts ? `Click to view ${conflicts.length} conflict(s)` : undefined}
+                    >
+                      {a.provider?.initials}
+                      {hasActiveConflicts && <span style={{ color: colors.ptoRed }}>*</span>}
+                    </span>
+                  </span>
+                );
+              }
+
+              // For non-PTO rows: check if provider has PTO conflicts
+              const conflicts = hasPTOToday && a.provider ? getConflictingAssignmentsForPTO(a.provider.id, date, providerPTO) : [];
+              const isOverridden = a.provider ? overriddenConflicts.has(getOverrideKey(a.provider.id, date)) : false;
+              const hasActiveConflicts = hasPTOToday && conflicts.length > 0 && !isOverridden;
+
+              return (
+                <span key={a.id}>
+                  {idx > 0 && ', '}
+                  <span
+                    style={{
+                      color: isPTO ? colors.ptoRed : colors.primaryBlue,
+                      backgroundColor: hasActiveConflicts ? `${colors.ptoRed}20` : undefined,
+                      padding: hasActiveConflicts ? '1px 3px' : undefined,
+                      borderRadius: hasActiveConflicts ? '2px' : undefined,
+                    }}
+                    title={hasPTOToday ? ptoTooltip : undefined}
+                  >
+                    {a.provider?.initials}
+                    {hasActiveConflicts && <span style={{ color: colors.ptoRed }}>*</span>}
+                  </span>
+                </span>
+              );
+            })}
           </div>
         ) : (
           <div className="text-gray-400 text-xs">-</div>

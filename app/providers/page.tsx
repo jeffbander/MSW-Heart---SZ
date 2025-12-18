@@ -17,6 +17,7 @@ const colors = {
 export default function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     async function fetchProviders() {
@@ -35,6 +36,18 @@ export default function ProvidersPage() {
 
     fetchProviders();
   }, []);
+
+  // Filter providers based on search query
+  const filteredProviders = providers.filter(provider => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      provider.name.toLowerCase().includes(query) ||
+      provider.initials.toLowerCase().includes(query) ||
+      provider.capabilities.some(cap => cap.toLowerCase().includes(query)) ||
+      provider.role.toLowerCase().includes(query)
+    );
+  });
 
   if (loading) {
     return (
@@ -63,13 +76,53 @@ export default function ProvidersPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Search Bar */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <input
+              type="text"
+              placeholder="Search by name, initials, role, or capability..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-4 py-3 pl-10 border rounded-lg shadow-sm focus:outline-none focus:ring-2"
+              style={{
+                borderColor: colors.border,
+                focusRing: colors.lightBlue,
+              }}
+            />
+            <svg
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5"
+              style={{ color: colors.lightBlue }}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Stats Bar */}
         <div className="mb-6 flex items-center gap-4">
           <span
             className="px-3 py-1 rounded-full text-sm font-medium text-white"
             style={{ backgroundColor: colors.teal }}
           >
-            {providers.length} Providers
+            {filteredProviders.length} Provider{filteredProviders.length !== 1 ? 's' : ''}
+            {searchQuery && ` (of ${providers.length})`}
           </span>
           <span className="text-gray-500 text-sm">
             Click on a provider to view their schedule
@@ -78,7 +131,7 @@ export default function ProvidersPage() {
 
         {/* Provider Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {providers.map((provider) => (
+          {filteredProviders.map((provider) => (
             <Link
               key={provider.id}
               href={`/providers/${provider.initials}`}
@@ -97,9 +150,17 @@ export default function ProvidersPage() {
                 </span>
                 <span
                   className="px-2 py-0.5 rounded text-xs font-medium text-white"
-                  style={{ backgroundColor: colors.teal }}
+                  style={{
+                    backgroundColor:
+                      provider.role === 'fellow' ? colors.teal :
+                      provider.role === 'pa' ? '#7C3AED' :
+                      provider.role === 'np' ? '#059669' :
+                      colors.lightBlue
+                  }}
                 >
-                  {provider.role === 'fellow' ? 'Fellow' : 'MD'}
+                  {provider.role === 'fellow' ? 'Fellow' :
+                   provider.role === 'pa' ? 'PA' :
+                   provider.role === 'np' ? 'NP' : 'MD'}
                 </span>
               </div>
 
@@ -162,6 +223,22 @@ export default function ProvidersPage() {
             </Link>
           ))}
         </div>
+
+        {/* No Results Message */}
+        {filteredProviders.length === 0 && searchQuery && (
+          <div className="text-center py-12">
+            <p className="text-gray-500 text-lg mb-2">
+              No providers found matching &quot;{searchQuery}&quot;
+            </p>
+            <button
+              onClick={() => setSearchQuery('')}
+              className="text-sm px-4 py-2 rounded"
+              style={{ color: colors.lightBlue }}
+            >
+              Clear search
+            </button>
+          </div>
+        )}
       </main>
 
       {/* Footer */}

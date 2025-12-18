@@ -197,6 +197,8 @@ export default function ProvidersAdminPage() {
                   >
                     <option value="attending">Attending</option>
                     <option value="fellow">Fellow</option>
+                    <option value="pa">PA (Physician Assistant)</option>
+                    <option value="np">NP (Nurse Practitioner)</option>
                   </select>
                 </div>
                 <div>
@@ -284,27 +286,34 @@ export default function ProvidersAdminPage() {
                 <td className="px-4 py-3">
                   <span
                     className="px-2 py-1 rounded text-xs font-medium text-white"
-                    style={{ backgroundColor: provider.role === 'fellow' ? colors.teal : colors.lightBlue }}
+                    style={{
+                      backgroundColor:
+                        provider.role === 'fellow' ? colors.teal :
+                        provider.role === 'pa' ? '#7C3AED' :
+                        provider.role === 'np' ? '#059669' :
+                        colors.lightBlue
+                    }}
                   >
-                    {provider.role === 'fellow' ? 'Fellow' : 'MD'}
+                    {provider.role === 'fellow' ? 'Fellow' :
+                     provider.role === 'pa' ? 'PA' :
+                     provider.role === 'np' ? 'NP' : 'MD'}
                   </span>
                 </td>
                 <td className="px-4 py-3">{provider.default_room_count}</td>
                 <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    {provider.capabilities.slice(0, 3).map((cap) => (
-                      <span
-                        key={cap}
-                        className="px-2 py-0.5 rounded text-xs"
-                        style={{ backgroundColor: '#E6F2FF', color: colors.primaryBlue }}
-                      >
-                        {cap}
-                      </span>
-                    ))}
-                    {provider.capabilities.length > 3 && (
-                      <span className="px-2 py-0.5 text-xs text-gray-400">
-                        +{provider.capabilities.length - 3}
-                      </span>
+                  <div className="flex flex-wrap gap-1 max-w-md">
+                    {provider.capabilities.length > 0 ? (
+                      provider.capabilities.map((cap) => (
+                        <span
+                          key={cap}
+                          className="px-2 py-0.5 rounded text-xs"
+                          style={{ backgroundColor: '#E6F2FF', color: colors.primaryBlue }}
+                        >
+                          {cap}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">No capabilities</span>
                     )}
                   </div>
                 </td>

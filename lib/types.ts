@@ -185,3 +185,40 @@ export interface CreateTemplateFromWeekRequest {
   weekStartDate: string;
   isGlobal?: boolean;
 }
+
+// Provider Availability Rules Types
+export type AvailabilityRuleType = 'allow' | 'block';
+export type AvailabilityEnforcement = 'hard' | 'warn';
+export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export type TimeBlock = 'AM' | 'PM' | 'BOTH';
+
+export interface ProviderAvailabilityRule {
+  id: string;
+  provider_id: string;
+  service_id: string;
+  day_of_week: DayOfWeek;
+  time_block: TimeBlock;
+  rule_type: AvailabilityRuleType;
+  enforcement: AvailabilityEnforcement;
+  reason: string | null;
+  created_at: string;
+  service?: Service;
+  provider?: Provider;
+}
+
+export interface AvailabilityCheckResult {
+  allowed: boolean;
+  enforcement: AvailabilityEnforcement | null;
+  reason: string | null;
+  rule: ProviderAvailabilityRule | null;
+}
+
+export interface AvailabilityViolation {
+  provider_id: string;
+  provider_initials: string;
+  date: string;
+  time_block: string;
+  service_name: string;
+  enforcement: AvailabilityEnforcement;
+  reason: string | null;
+}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { isHoliday, isInpatientService } from '@/lib/holidays';
+import { checkBulkAvailability } from '@/lib/availability';
 
 export async function POST(request: Request) {
   try {
@@ -94,6 +95,36 @@ export async function POST(request: Request) {
         { error: 'PTO conflicts detected', conflicts },
         { status: 400 }
       );
+    }
+
+    // Check availability rules (skip if force_override is set)
+    if (!body.force_override) {
+      const availabilityResult = await checkBulkAvailability(assignments);
+
+      if (availabilityResult.hardBlocks.length > 0) {
+        return NextResponse.json(
+          {
+            error: 'Provider availability conflicts detected',
+            type: 'availability_hard_block',
+            hardBlocks: availabilityResult.hardBlocks,
+            warnings: availabilityResult.warnings
+          },
+          { status: 400 }
+        );
+      }
+
+      // If only warnings exist, include them in response but proceed
+      if (availabilityResult.warnings.length > 0 && !body.acknowledged_warnings) {
+        return NextResponse.json(
+          {
+            error: 'Provider availability warnings',
+            type: 'availability_warning',
+            warnings: availabilityResult.warnings,
+            requiresConfirmation: true
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const { data, error } = await supabase

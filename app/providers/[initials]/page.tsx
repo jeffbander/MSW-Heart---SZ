@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Provider, Service, ScheduleAssignment } from '@/lib/types';
+import ProviderAvailabilityEditor from '@/app/components/ProviderAvailabilityEditor';
 
 // Mount Sinai Colors
 const colors = {
@@ -66,6 +67,8 @@ export default function ProviderProfilePage() {
   const [notFound, setNotFound] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [services, setServices] = useState<Service[]>([]);
+  const [showAvailabilityEditor, setShowAvailabilityEditor] = useState(false);
 
   // Fetch provider data
   useEffect(() => {
@@ -87,6 +90,15 @@ export default function ProviderProfilePage() {
 
     fetchProvider();
   }, [initials]);
+
+  // Fetch services for availability editor
+  useEffect(() => {
+    async function fetchServices() {
+      const { data } = await supabase.from('services').select('*');
+      setServices(data || []);
+    }
+    fetchServices();
+  }, []);
 
   // Fetch assignments based on view mode and date
   useEffect(() => {
@@ -252,8 +264,30 @@ export default function ProviderProfilePage() {
                   </span>
                 ))}
               </div>
+
+              {/* Availability Rules Button */}
+              <div className="mt-4">
+                <button
+                  onClick={() => setShowAvailabilityEditor(!showAvailabilityEditor)}
+                  className="px-4 py-2 rounded text-sm font-medium"
+                  style={{ backgroundColor: colors.lightBlue, color: 'white' }}
+                >
+                  {showAvailabilityEditor ? 'Hide' : 'Manage'} Availability Rules
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* Availability Editor */}
+          {showAvailabilityEditor && provider && (
+            <div className="mt-4">
+              <ProviderAvailabilityEditor
+                providerId={provider.id}
+                providerName={provider.name}
+                services={services}
+              />
+            </div>
+          )}
         </div>
       </div>
 
