@@ -20,6 +20,7 @@ const colors = {
   ptoRed: '#DC2626',
   holidayPurple: '#7C3AED',
   holidayBgLight: '#EDE9FE',
+  fellowPurple: '#7C3AED', // Purple color for fellows
 };
 
 type ViewMode = 'service' | 'provider';
@@ -27,6 +28,14 @@ type TimeFrame = 'day' | 'week' | 'month';
 
 // Full day services that don't split into AM/PM
 const FULL_DAY_SERVICES = ['PTO', 'Nuclear Stress', 'Heart Failure'];
+
+// Services that require coverage - highlight empty cells on weekdays
+const COVERAGE_REQUIRED_SERVICES = [
+  'Burgundy', 'Consults', 'Fourth Floor Echo Lab',
+  'Echo TTE AM', 'Echo TTE PM',
+  'Stress Echo AM', 'Stress Echo PM',
+  'Nuclear', 'Nuclear Stress'
+];
 
 export default function MainCalendar() {
   const [services, setServices] = useState<Service[]>([]);
@@ -38,6 +47,12 @@ export default function MainCalendar() {
   const [viewMode, setViewMode] = useState<ViewMode>('service');
   const [timeFrame, setTimeFrame] = useState<TimeFrame>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerDate, setPickerDate] = useState(new Date());
+
+  // Sandbox mode
+  const [sandboxMode, setSandboxMode] = useState(false);
+  const [sandboxSessionId, setSandboxSessionId] = useState<string | null>(null);
 
   // Provider View filters
   const [roleFilter, setRoleFilter] = useState<string>('all');
@@ -285,6 +300,27 @@ export default function MainCalendar() {
     return rule ? rule.enforcement : null; // null = available, 'warn' = soft warning, 'hard' = blocked
   };
 
+  // Check if there are any fellows assigned to Rooms for a given date/timeBlock
+  const hasFellowsInRooms = (date: string, timeBlock: string): boolean => {
+    const roomsServiceName = timeBlock === 'AM' ? 'Rooms AM' : 'Rooms PM';
+    const roomsService = services.find(s => s.name === roomsServiceName);
+    if (!roomsService) return false;
+
+    const roomsAssignments = getAssignmentsForCell(roomsService.id, date, timeBlock);
+    return roomsAssignments.some(a => a.provider?.role === 'fellow');
+  };
+
+  // Get the provider assigned to Precepting for a given date/timeBlock
+  const getPreceptorForTime = (date: string, timeBlock: string): Provider | null => {
+    const preceptingService = services.find(s => s.name === 'Precepting');
+    if (!preceptingService) return null;
+
+    const preceptingAssignments = getAssignmentsForCell(preceptingService.id, date, timeBlock);
+    if (preceptingAssignments.length === 0) return null;
+
+    return preceptingAssignments[0].provider || null;
+  };
+
   // Get room suggestions for reaching target
   const getRoomSuggestions = (date: string, timeBlock: string, assignedProviderIds: string[]) => {
     const dayOfWeek = new Date(date + 'T00:00:00').getDay();
@@ -302,6 +338,46 @@ export default function MainCalendar() {
 
     if (needed === 0) return { needed: 0, target, currentRooms, suggestions: [] };
 
+    // Services that block a provider from being suggested for rooms
+    const BLOCKING_SERVICES = ['Consults', 'Burgundy', 'Fourth Floor Echo Lab', 'Offsites AM', 'Offsites PM'];
+
+    // Check if provider has a blocking assignment at this time
+    const hasBlockingAssignment = (providerId: string) => {
+      const providerAssignments = assignments.filter(a =>
+        a.provider_id === providerId &&
+        a.date === date &&
+        (a.time_block === timeBlock || a.time_block === 'BOTH')
+      );
+      return providerAssignments.some(a => {
+        const serviceName = services.find(s => s.id === a.service_id)?.name;
+        return serviceName && BLOCKING_SERVICES.includes(serviceName);
+      });
+    };
+
+    // Check if provider has ANY hard availability block for this day/time (across all services)
+    const hasAnyHardBlock = (providerId: string) => {
+      return availabilityRules.some(r =>
+        r.provider_id === providerId &&
+        r.day_of_week === dayOfWeek &&
+        (r.time_block === timeBlock || r.time_block === 'BOTH') &&
+        r.enforcement === 'hard'
+      );
+    };
+
+    // Check if provider has ANY soft availability warning for this day/time (across all services)
+    const hasAnyWarning = (providerId: string) => {
+      return availabilityRules.some(r =>
+        r.provider_id === providerId &&
+        r.day_of_week === dayOfWeek &&
+        (r.time_block === timeBlock || r.time_block === 'BOTH') &&
+        r.enforcement === 'warn'
+      );
+    };
+
+    // Check if there are fellows in Rooms - if not, preceptor becomes available
+    const fellowsInRooms = hasFellowsInRooms(date, timeBlock);
+    const preceptor = getPreceptorForTime(date, timeBlock);
+
     // Get available providers with Rooms capability who aren't assigned and don't have PTO
     // Filter out providers with hard blocks and mark those with soft warnings
     const available = providers
@@ -310,15 +386,18 @@ export default function MainCalendar() {
         if (assignedProviderIds.includes(p.id)) return false;
         if (getProviderPTOForDate(p.id, date).some(tb => tb === timeBlock || tb === 'BOTH')) return false;
 
-        // Check availability rules - exclude hard blocks
-        const availability = getProviderAvailability(p.id, roomsService.id, dayOfWeek, timeBlock);
-        if (availability === 'hard') return false;
+        // Check if provider has a blocking assignment (Consults, Burgundy, Fourth Floor Echo Lab, Offsites)
+        if (hasBlockingAssignment(p.id)) return false;
+
+        // Check availability rules - exclude providers with hard blocks on ANY service
+        if (hasAnyHardBlock(p.id)) return false;
 
         return true;
       })
       .map(p => ({
         ...p,
-        hasWarning: getProviderAvailability(p.id, roomsService.id, dayOfWeek, timeBlock) === 'warn'
+        hasWarning: hasAnyWarning(p.id),
+        isPreceptorAvailable: false
       }))
       .sort((a, b) => {
         // Sort providers without warnings first, then by room count
@@ -328,7 +407,21 @@ export default function MainCalendar() {
         return b.default_room_count - a.default_room_count;
       });
 
-    return { needed, target, currentRooms, suggestions: available };
+    // If no fellows in Rooms and there's a preceptor, add them to suggestions
+    if (!fellowsInRooms && preceptor && !assignedProviderIds.includes(preceptor.id)) {
+      // Check if preceptor is already in the available list
+      const preceptorInList = available.find(p => p.id === preceptor.id);
+      if (!preceptorInList) {
+        // Add preceptor to the front of the list with special flag
+        available.unshift({
+          ...preceptor,
+          hasWarning: false,
+          isPreceptorAvailable: true
+        });
+      }
+    }
+
+    return { needed, target, currentRooms, suggestions: available, fellowsInRooms };
   };
 
   // Navigation handlers
@@ -669,9 +762,73 @@ export default function MainCalendar() {
             >
               Next →
             </button>
-            <span className="text-lg font-semibold ml-2" style={{ color: colors.primaryBlue }}>
-              {getMonthYear()}
-            </span>
+            <div className="relative">
+              <span 
+                className="text-lg font-semibold ml-2 cursor-pointer hover:underline" 
+                style={{ color: colors.primaryBlue }}
+                onClick={() => { setPickerDate(new Date(currentDate)); setShowDatePicker(!showDatePicker); }}
+              >
+                {getMonthYear()} ▼
+              </span>
+              {showDatePicker && (
+                <div 
+                  className="absolute top-full left-0 mt-2 bg-white border rounded-lg shadow-lg p-4 z-50"
+                  style={{ borderColor: colors.border, minWidth: '280px' }}
+                >
+                  <div className="flex justify-between items-center mb-3">
+                    <button 
+                      onClick={() => setPickerDate(new Date(pickerDate.getFullYear(), pickerDate.getMonth() - 1, 1))}
+                      className="px-2 py-1 hover:bg-gray-100 rounded"
+                    >
+                      ←
+                    </button>
+                    <span className="font-semibold" style={{ color: colors.primaryBlue }}>
+                      {pickerDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </span>
+                    <button 
+                      onClick={() => setPickerDate(new Date(pickerDate.getFullYear(), pickerDate.getMonth() + 1, 1))}
+                      className="px-2 py-1 hover:bg-gray-100 rounded"
+                    >
+                      →
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1 text-center text-sm">
+                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                      <div key={d} className="font-medium text-gray-500 py-1">{d}</div>
+                    ))}
+                    {(() => {
+                      const firstDay = new Date(pickerDate.getFullYear(), pickerDate.getMonth(), 1);
+                      const lastDay = new Date(pickerDate.getFullYear(), pickerDate.getMonth() + 1, 0);
+                      const days = [];
+                      for (let i = 0; i < firstDay.getDay(); i++) {
+                        days.push(<div key={`empty-${i}`} />);
+                      }
+                      for (let d = 1; d <= lastDay.getDate(); d++) {
+                        const date = new Date(pickerDate.getFullYear(), pickerDate.getMonth(), d);
+                        const isToday = date.toDateString() === new Date().toDateString();
+                        const isCurrentWeek = (() => {
+                          const weekStart = new Date(currentDate);
+                          weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+                          const weekEnd = new Date(weekStart);
+                          weekEnd.setDate(weekEnd.getDate() + 6);
+                          return date >= weekStart && date <= weekEnd;
+                        })();
+                        days.push(
+                          <button
+                            key={d}
+                            onClick={() => { setCurrentDate(date); setShowDatePicker(false); }}
+                            className={`py-1 rounded hover:bg-blue-100 ${isToday ? "bg-blue-500 text-white hover:bg-blue-600" : ""} ${isCurrentWeek && !isToday ? "bg-blue-50" : ""}`}
+                          >
+                            {d}
+                          </button>
+                        );
+                      }
+                      return days;
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Template Actions - Show in week view */}
@@ -703,6 +860,41 @@ export default function MainCalendar() {
               </button>
             </div>
           )}
+
+          {/* Sandbox Mode Toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                if (!sandboxMode) {
+                  // Start sandbox session
+                  try {
+                    const res = await fetch('/api/sandbox', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'create_session', name: `Sandbox ${new Date().toLocaleDateString()}` })
+                    });
+                    const session = await res.json();
+                    setSandboxSessionId(session.id);
+                    setSandboxMode(true);
+                  } catch (err) {
+                    console.error('Failed to start sandbox:', err);
+                  }
+                } else {
+                  // Exit sandbox mode
+                  setSandboxMode(false);
+                  setSandboxSessionId(null);
+                }
+              }}
+              className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                sandboxMode
+                  ? 'bg-orange-500 text-white hover:bg-orange-600'
+                  : 'border hover:bg-gray-50'
+              }`}
+              style={!sandboxMode ? { borderColor: colors.border, color: colors.primaryBlue } : {}}
+            >
+              {sandboxMode ? '🧪 Exit Sandbox' : '🧪 Sandbox Mode'}
+            </button>
+          </div>
 
           {/* Provider View Filters */}
           {viewMode === 'provider' && (
@@ -750,6 +942,66 @@ export default function MainCalendar() {
         </div>
       </div>
 
+      {/* Sandbox Mode Banner */}
+      {sandboxMode && (
+        <div className="bg-orange-100 border-b-2 border-orange-400 px-4 py-3">
+          <div className="max-w-full mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🧪</span>
+              <div>
+                <span className="font-semibold text-orange-800">Sandbox Mode Active</span>
+                <p className="text-sm text-orange-700">Changes will not affect the live schedule until you publish them.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  if (confirm('Discard all sandbox changes? This cannot be undone.')) {
+                    if (sandboxSessionId) {
+                      await fetch(`/api/sandbox?sessionId=${sandboxSessionId}`, { method: 'DELETE' });
+                    }
+                    setSandboxMode(false);
+                    setSandboxSessionId(null);
+                  }
+                }}
+                className="px-4 py-2 rounded text-sm font-medium bg-white border border-orange-400 text-orange-700 hover:bg-orange-50 transition-colors"
+              >
+                Discard Changes
+              </button>
+              <button
+                onClick={async () => {
+                  if (confirm('Publish all sandbox changes to the live schedule?')) {
+                    try {
+                      const res = await fetch('/api/sandbox/publish', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionId: sandboxSessionId })
+                      });
+                      const result = await res.json();
+                      if (result.success) {
+                        alert(`Published ${result.published} changes to live schedule!`);
+                        setSandboxMode(false);
+                        setSandboxSessionId(null);
+                        // Refresh assignments
+                        window.location.reload();
+                      } else {
+                        alert('Failed to publish: ' + (result.error || 'Unknown error'));
+                      }
+                    } catch (err) {
+                      console.error('Failed to publish:', err);
+                      alert('Failed to publish changes');
+                    }
+                  }
+                }}
+                className="px-4 py-2 rounded text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+              >
+                Publish to Live
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="p-4">
         {viewMode === 'service' ? (
@@ -774,6 +1026,7 @@ export default function MainCalendar() {
             overriddenConflicts={overriddenConflicts}
             getOverrideKey={getOverrideKey}
             onPTOConflictClick={handlePTOConflictClick}
+            hasFellowsInRooms={hasFellowsInRooms}
           />
         ) : (
           <ProviderView
@@ -882,11 +1135,14 @@ export default function MainCalendar() {
                           {suggestions.suggestions.slice(0, 5).map((p, i) => (
                             <span
                               key={p.id}
-                              style={{ color: p.hasWarning ? '#F59E0B' : '#92400E' }}
-                              title={p.hasWarning ? 'Has availability warning for this time' : undefined}
+                              style={{
+                                color: p.isPreceptorAvailable ? colors.fellowPurple : (p.hasWarning ? '#F59E0B' : '#92400E'),
+                                fontWeight: p.isPreceptorAvailable ? 'bold' : 'normal'
+                              }}
+                              title={p.isPreceptorAvailable ? 'Preceptor available - no fellows today' : (p.hasWarning ? 'Has availability warning for this time' : undefined)}
                             >
                               {i > 0 && ', '}
-                              {p.initials} ({p.default_room_count}){p.hasWarning ? ' ⚠️' : ''}
+                              {p.initials} ({p.default_room_count}){p.isPreceptorAvailable ? ' 🎓' : ''}{p.hasWarning ? ' ⚠️' : ''}
                             </span>
                           ))}
                           {suggestions.suggestions.length > 5 && (
@@ -1117,12 +1373,14 @@ interface ServiceViewProps {
     needed: number;
     target: number;
     currentRooms: number;
-    suggestions: (Provider & { hasWarning: boolean })[];
+    suggestions: (Provider & { hasWarning: boolean; isPreceptorAvailable: boolean })[];
+    fellowsInRooms: boolean;
   };
   getConflictingAssignmentsForPTO: (providerId: string, date: string, ptoTimeBlocks: string[]) => ScheduleAssignment[];
   overriddenConflicts: Set<string>;
   getOverrideKey: (providerId: string, date: string) => string;
   onPTOConflictClick: (provider: Provider, date: string, ptoTimeBlocks: string[]) => void;
+  hasFellowsInRooms: (date: string, timeBlock: string) => boolean;
 }
 
 // Service grouping configuration
@@ -1152,6 +1410,7 @@ function ServiceView({
   overriddenConflicts,
   getOverrideKey,
   onPTOConflictClick,
+  hasFellowsInRooms,
 }: ServiceViewProps) {
   // Helper to find service by name
   const findService = (name: string) => services.find((s) => s.name === name);
@@ -1170,7 +1429,7 @@ function ServiceView({
     const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && timeBlock === 'PM';
     const maxGreen = isExtendedDay ? 15 : 14;
 
-    if (current === 0) return '#F9FAFB'; // Light gray - no coverage
+    if (current === 0) return '#FFEDD5'; // Light orange - empty, needs coverage urgently
     if (current < 12) return '#FEF3C7'; // Light yellow - under-staffed
     if (current <= maxGreen) return '#D1FAE5'; // Light green - optimal
     return '#FEE2E2'; // Light red - over capacity
@@ -1329,6 +1588,41 @@ function ServiceView({
       );
     }
 
+    // Special handling for Precepting
+    if (row.name === 'Precepting') {
+      // Check both AM and PM for fellows since Precepting is typically BOTH
+      const hasFellowsAM = hasFellowsInRooms(date, 'AM');
+      const hasFellowsPM = hasFellowsInRooms(date, 'PM');
+      const hasFellows = hasFellowsAM || hasFellowsPM;
+      const preceptingDayOfWeek = new Date(date + 'T00:00:00').getDay();
+      const isPreceptingWeekend = preceptingDayOfWeek === 0 || preceptingDayOfWeek === 6;
+
+      if (!hasFellows) {
+        // No fellows in Rooms - Precepting not needed, show blank
+        return (
+          <td
+            key={date}
+            className="border px-2 py-2 text-center"
+            style={{ borderColor: colors.border }}
+          >
+            <div className="text-gray-400 text-xs">-</div>
+          </td>
+        );
+      } else if (cellAssignments.length === 0 && !isPreceptingWeekend) {
+        // Fellows ARE in Rooms but no preceptor assigned - needs coverage
+        return (
+          <td
+            key={date}
+            className="border px-2 py-2 cursor-pointer hover:bg-blue-50 transition-colors text-center"
+            style={{ borderColor: colors.border, backgroundColor: '#FFEDD5' }}
+            onClick={() => handleCellClick(row.serviceId!, date, row.timeBlock!)}
+          >
+            <div className="text-gray-400 text-xs">-</div>
+          </td>
+        );
+      }
+    }
+
     // Special handling for Rooms rows (also closed on holidays)
     if (row.isRooms) {
       if (holiday) {
@@ -1346,17 +1640,20 @@ function ServiceView({
       }
 
       const { current, max, providers: providerInitials } = getRoomCapacityForService(row.serviceId, date, row.timeBlock);
-      const bgColor = getRoomCapacityBgColor(current, date, row.timeBlock);
-      // Date-aware text color for Wed/Thu PM extended limit
+      // Date-aware logic
       const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
       const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && row.timeBlock === 'PM';
       const maxGreen = isExtendedDay ? 15 : 14;
-      const textColor = current === 0 ? '#9CA3AF' : current < 12 ? '#D97706' : current <= maxGreen ? '#059669' : '#DC2626';
 
-      // Get room suggestions if under target
+      // For weekends, use neutral styling (no coverage colors or suggestions)
+      const bgColor = isWeekend ? undefined : getRoomCapacityBgColor(current, date, row.timeBlock);
+      const textColor = isWeekend ? colors.primaryBlue : (current === 0 ? '#9CA3AF' : current < 12 ? '#D97706' : current <= maxGreen ? '#059669' : '#DC2626');
+
+      // Get room suggestions if under target (only for weekdays)
       const cellAssignments = getAssignmentsForCell(row.serviceId, date, row.timeBlock);
       const assignedIds = cellAssignments.map(a => a.provider_id);
-      const suggestions = getRoomSuggestions(date, row.timeBlock, assignedIds);
+      const suggestions = isWeekend ? { needed: 0, suggestions: [], fellowsInRooms: true } : getRoomSuggestions(date, row.timeBlock, assignedIds);
 
       return (
         <td
@@ -1365,17 +1662,34 @@ function ServiceView({
           style={{ borderColor: colors.border, backgroundColor: bgColor }}
           onClick={() => handleCellClick(row.serviceId!, date, row.timeBlock!)}
         >
-          <div className="text-xs font-medium" style={{ color: colors.primaryBlue }}>
-            {providerInitials.length > 0 ? providerInitials.join(', ') : '-'}
+          <div className="text-xs font-medium">
+            {cellAssignments.length > 0 ? (
+              cellAssignments.map((a, idx) => {
+                const providerColor = a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue;
+                return (
+                  <span key={a.id} style={{ color: providerColor }}>
+                    {idx > 0 && ', '}{a.provider?.initials}
+                  </span>
+                );
+              })
+            ) : '-'}
           </div>
-          <div className="text-xs font-semibold" style={{ color: textColor }}>
-            ({current}/{maxGreen})
-          </div>
-          {suggestions.needed > 0 && current > 0 && (
+          {!isWeekend && (
+            <div className="text-xs font-semibold" style={{ color: textColor }}>
+              ({current}/{maxGreen})
+            </div>
+          )}
+          {!isWeekend && suggestions.needed > 0 && suggestions.suggestions.length > 0 && (
             <div className="text-[10px] mt-0.5" style={{ color: '#92400E' }}>
-              +{suggestions.suggestions.slice(0, 2).map(p => (
-                <span key={p.id} style={{ color: p.hasWarning ? '#F59E0B' : '#92400E' }}>
-                  {p.initials}({p.default_room_count}){p.hasWarning ? '!' : ''}
+              +{suggestions.suggestions.slice(0, 3).map(p => (
+                <span
+                  key={p.id}
+                  style={{
+                    color: p.isPreceptorAvailable ? colors.fellowPurple : (p.hasWarning ? '#F59E0B' : '#92400E'),
+                    fontWeight: p.isPreceptorAvailable ? 'bold' : 'normal'
+                  }}
+                >
+                  {p.initials}({p.default_room_count}){p.isPreceptorAvailable ? '🎓' : ''}{p.hasWarning ? '!' : ''}
                 </span>
               )).reduce((prev, curr, i) => i === 0 ? [curr] : [...prev, ', ', curr], [] as React.ReactNode[])}
             </div>
@@ -1385,7 +1699,17 @@ function ServiceView({
     }
 
     // Normal cell rendering (with holiday background for inpatient services on holidays)
-    const bgStyle = holiday && isInpatient ? colors.holidayBgLight : undefined;
+    // Also check for coverage highlighting on empty cells for specific services
+    const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const needsCoverage = !isWeekend && cellAssignments.length === 0 && COVERAGE_REQUIRED_SERVICES.includes(row.name);
+
+    let bgStyle: string | undefined;
+    if (holiday && isInpatient) {
+      bgStyle = colors.holidayBgLight;
+    } else if (needsCoverage) {
+      bgStyle = '#FFEDD5'; // Light orange - needs coverage
+    }
 
     return (
       <td
@@ -1443,12 +1767,15 @@ function ServiceView({
               const isOverridden = a.provider ? overriddenConflicts.has(getOverrideKey(a.provider.id, date)) : false;
               const hasActiveConflicts = hasPTOToday && conflicts.length > 0 && !isOverridden;
 
+              // Determine provider color: PTO = red, Fellow = purple, Attending = blue
+              const providerColor = isPTO ? colors.ptoRed : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue);
+
               return (
                 <span key={a.id}>
                   {idx > 0 && ', '}
                   <span
                     style={{
-                      color: isPTO ? colors.ptoRed : colors.primaryBlue,
+                      color: providerColor,
                       backgroundColor: hasActiveConflicts ? `${colors.ptoRed}20` : undefined,
                       padding: hasActiveConflicts ? '1px 3px' : undefined,
                       borderRadius: hasActiveConflicts ? '2px' : undefined,
@@ -1595,8 +1922,15 @@ function ServiceView({
                       onClick={() => handleCellClick(row.serviceId!, date, 'BOTH')}
                     >
                       {cellAssignments.length > 0 ? (
-                        <div className="text-xs font-medium" style={{ color: isPTO ? colors.ptoRed : colors.primaryBlue }}>
-                          {cellAssignments.map((a) => a.provider?.initials).join(', ')}
+                        <div className="text-xs font-medium">
+                          {cellAssignments.map((a, idx) => {
+                            const providerColor = isPTO ? colors.ptoRed : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue);
+                            return (
+                              <span key={a.id} style={{ color: providerColor }}>
+                                {idx > 0 && ', '}{a.provider?.initials}
+                              </span>
+                            );
+                          })}
                         </div>
                       ) : (
                         <div className="text-gray-400 text-xs">-</div>
@@ -1700,8 +2034,15 @@ function ServiceView({
                         onClick={() => handleCellClick(row.serviceId!, date, 'AM')}
                       >
                         {cellAssignments.length > 0 ? (
-                          <div className="text-xs font-medium" style={{ color: colors.primaryBlue }}>
-                            {cellAssignments.map((a) => a.provider?.initials).join(', ')}
+                          <div className="text-xs font-medium">
+                            {cellAssignments.map((a, idx) => {
+                              const providerColor = a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue;
+                              return (
+                                <span key={a.id} style={{ color: providerColor }}>
+                                  {idx > 0 && ', '}{a.provider?.initials}
+                                </span>
+                              );
+                            })}
                           </div>
                         ) : (
                           <div className="text-gray-400 text-xs">-</div>
@@ -1718,8 +2059,15 @@ function ServiceView({
                         onClick={() => handleCellClick(row.serviceId!, date, 'PM')}
                       >
                         {cellAssignments.length > 0 ? (
-                          <div className="text-xs font-medium" style={{ color: colors.primaryBlue }}>
-                            {cellAssignments.map((a) => a.provider?.initials).join(', ')}
+                          <div className="text-xs font-medium">
+                            {cellAssignments.map((a, idx) => {
+                              const providerColor = a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue;
+                              return (
+                                <span key={a.id} style={{ color: providerColor }}>
+                                  {idx > 0 && ', '}{a.provider?.initials}
+                                </span>
+                              );
+                            })}
                           </div>
                         ) : (
                           <div className="text-gray-400 text-xs">-</div>
@@ -1883,9 +2231,14 @@ function ServiceView({
                                 <span className="font-medium" style={{ color: isPTO ? colors.ptoRed : colors.teal }}>
                                   {displayName}:
                                 </span>{' '}
-                                <span style={{ color: isPTO ? colors.ptoRed : colors.primaryBlue }}>
-                                  {cellAssignments.map((a) => a.provider?.initials).join(', ')}
-                                </span>
+                                {cellAssignments.map((a, idx) => {
+                                  const providerColor = isPTO ? colors.ptoRed : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue);
+                                  return (
+                                    <span key={a.id} style={{ color: providerColor }}>
+                                      {idx > 0 && ', '}{a.provider?.initials}
+                                    </span>
+                                  );
+                                })}
                               </div>
                             );
                           })}
