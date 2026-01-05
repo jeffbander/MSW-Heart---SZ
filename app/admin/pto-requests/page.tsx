@@ -121,6 +121,28 @@ export default function AdminPTORequestsPage() {
     }
   }
 
+  async function handleDelete(request: PTORequest) {
+    if (!confirm(`Are you sure you want to delete this PTO request for ${request.provider?.initials}?\n\nDates: ${request.start_date} to ${request.end_date}`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/pto-requests/${request.id}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        fetchData();
+      } else {
+        const error = await res.json();
+        alert(error.error || 'Failed to delete request');
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Failed to delete request');
+    }
+  }
+
   async function handleAdminSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!adminFormProviderId || !adminFormStartDate || !adminFormEndDate) return;
@@ -481,34 +503,41 @@ export default function AdminPTORequestsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {req.status === 'pending' ? (
-                        <div className="flex justify-center gap-2">
-                          <button
-                            onClick={() => handleAction(req, 'approve')}
-                            className="px-3 py-1 text-xs rounded text-white font-medium"
-                            style={{ backgroundColor: colors.success }}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => handleAction(req, 'deny')}
-                            className="px-3 py-1 text-xs rounded text-white font-medium"
-                            style={{ backgroundColor: colors.error }}
-                          >
-                            Deny
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400">
-                          {req.reviewed_by_admin_name && (
-                            <>
-                              by {req.reviewed_by_admin_name}
-                              <br />
-                              {req.reviewed_at &&
-                                new Date(req.reviewed_at).toLocaleDateString()}
-                            </>
+                      <div className="flex justify-center gap-2">
+                        {req.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => handleAction(req, 'approve')}
+                              className="px-3 py-1 text-xs rounded text-white font-medium"
+                              style={{ backgroundColor: colors.success }}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => handleAction(req, 'deny')}
+                              className="px-3 py-1 text-xs rounded text-white font-medium"
+                              style={{ backgroundColor: colors.error }}
+                            >
+                              Deny
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => handleDelete(req)}
+                          className="px-3 py-1 text-xs rounded border font-medium hover:bg-red-50"
+                          style={{ borderColor: colors.error, color: colors.error }}
+                          title="Delete this PTO request"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                      {req.status !== 'pending' && req.reviewed_by_admin_name && (
+                        <div className="text-xs text-gray-400 mt-1">
+                          by {req.reviewed_by_admin_name}
+                          {req.reviewed_at && (
+                            <> on {new Date(req.reviewed_at).toLocaleDateString()}</>
                           )}
-                        </span>
+                        </div>
                       )}
                     </td>
                   </tr>

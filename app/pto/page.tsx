@@ -52,8 +52,6 @@ export default function PTOSubmissionPage() {
   const [warnings, setWarnings] = useState<PTOValidationWarning[]>([]);
   const [validating, setValidating] = useState(false);
   const [calculatedDays, setCalculatedDays] = useState<number | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [debugInfo, setDebugInfo] = useState<any>(null); // DEBUG - remove after debugging
 
   // PTO Balance state
   interface PTOBalance {
@@ -134,16 +132,13 @@ export default function PTOSubmissionPage() {
         const data = await res.json();
         setWarnings(data.warnings || []);
         setCalculatedDays(data.calculated_days);
-        setDebugInfo(data._debug); // DEBUG - capture debug info
       } else {
         setWarnings([]);
         setCalculatedDays(null);
-        setDebugInfo(null);
       }
     } catch (err) {
       console.error('Error validating PTO:', err);
       setWarnings([]);
-      setDebugInfo(null);
     } finally {
       setValidating(false);
     }
@@ -484,28 +479,6 @@ export default function PTOSubmissionPage() {
                   </div>
                 </div>
               ))}
-            </div>
-          )}
-
-          {/* DEBUG INFO - Remove after debugging */}
-          {debugInfo && (
-            <div className="mb-6 p-4 rounded-lg border-2 border-dashed border-purple-400 bg-purple-50">
-              <div className="text-sm font-bold text-purple-700 mb-2">DEBUG INFO (remove after fixing)</div>
-              <div className="text-xs font-mono text-purple-900 space-y-1">
-                <div><strong>Query params:</strong> {JSON.stringify(debugInfo.query_params)}</div>
-                <div><strong>Overlapping leaves found:</strong> {debugInfo.overlapping_leaves_count}</div>
-                <div><strong>Overlapping requests found:</strong> {debugInfo.overlapping_requests_count}</div>
-                <div><strong>Final overlapping providers:</strong> {JSON.stringify(debugInfo.final_overlapping_providers)}</div>
-                <div><strong>Total warnings:</strong> {debugInfo.warnings_count}</div>
-                {debugInfo.overlapping_requests_raw && debugInfo.overlapping_requests_raw.length > 0 && (
-                  <div className="mt-2">
-                    <strong>Raw overlapping requests:</strong>
-                    <pre className="mt-1 p-2 bg-white rounded text-xs overflow-auto max-h-32">
-                      {JSON.stringify(debugInfo.overlapping_requests_raw, null, 2)}
-                    </pre>
-                  </div>
-                )}
-              </div>
             </div>
           )}
 

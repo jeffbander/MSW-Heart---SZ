@@ -293,17 +293,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       calculated_days,
       warnings,
-      can_submit: true, // Warnings don't block submission
-      // DEBUG INFO - remove after debugging
-      _debug: {
-        query_params: { provider_id, start_date, end_date, time_block },
-        overlapping_leaves_count: overlappingLeaves?.length || 0,
-        overlapping_leaves_raw: overlappingLeaves,
-        overlapping_requests_count: overlappingRequests?.length || 0,
-        overlapping_requests_raw: overlappingRequests,
-        final_overlapping_providers: overlappingProviders,
-        warnings_count: warnings.length
-      }
+      can_submit: true // Warnings don't block submission
     });
   } catch (error) {
     console.error('Error validating PTO request:', error);

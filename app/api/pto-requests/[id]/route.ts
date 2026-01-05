@@ -38,7 +38,7 @@ export async function GET(
   }
 }
 
-// DELETE /api/pto-requests/[id] - Delete a pending PTO request
+// DELETE /api/pto-requests/[id] - Delete a PTO request (admin only)
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -46,10 +46,10 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    // First check if the request exists and is pending
+    // Check if the request exists
     const { data: existing, error: fetchError } = await supabase
       .from('pto_requests')
-      .select('status')
+      .select('id')
       .eq('id', id)
       .single();
 
@@ -61,14 +61,6 @@ export async function DELETE(
         );
       }
       throw fetchError;
-    }
-
-    // Only allow deletion of pending requests
-    if (existing.status !== 'pending') {
-      return NextResponse.json(
-        { error: 'Only pending requests can be deleted' },
-        { status: 400 }
-      );
     }
 
     const { error } = await supabase
