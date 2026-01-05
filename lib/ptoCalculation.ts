@@ -157,6 +157,7 @@ export function buildPTOWarnings(
 
     warnings.push({
       type: 'other_providers_off',
+      severity: 'info',
       message: `The following providers are also off during this period: ${providerList}`,
       details: {
         providers: overlappingProviders
@@ -168,6 +169,7 @@ export function buildPTOWarnings(
   if (nearbyHoliday && holidayProximityCount >= 2) {
     warnings.push({
       type: 'holiday_proximity',
+      severity: 'warning',
       message: `You have already taken ${holidayProximityCount} PTO request(s) near holidays this year. This request is near ${nearbyHoliday.name} (${nearbyHoliday.date}).`,
       details: {
         holidayAdjacentCount: holidayProximityCount,

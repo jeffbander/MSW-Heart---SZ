@@ -9,7 +9,23 @@ const colors = {
   teal: '#00A3AD',
   ptoRed: '#DC2626',
   border: '#E5E7EB',
+  success: '#059669',
+  warning: '#F59E0B',
 };
+
+interface PTOBalance {
+  annual_allowance: number;
+  carryover_days: number;
+  total_available: number;
+  days_used: number;
+  days_remaining: number;
+  pending_days: number;
+  allowance_source: string;
+  warning: {
+    level: 'none' | 'approaching' | 'exceeded';
+    message: string | null;
+  };
+}
 
 const AVAILABLE_CAPABILITIES = [
   'Inpatient', 'Rooms', 'Admin', 'Precepting', 'Offsites', 'PTO',
@@ -32,9 +48,27 @@ export default function ProvidersAdminPage() {
     capabilities: [] as string[]
   });
 
+  // PTO Balance management state
+  const [ptoBalances, setPtoBalances] = useState<Record<string, PTOBalance>>({});
+  const [loadingBalances, setLoadingBalances] = useState(false);
+  const [editingPTO, setEditingPTO] = useState<Provider | null>(null);
+  const [ptoFormData, setPtoFormData] = useState({
+    annual_allowance: '',
+    carryover_days: '0',
+    notes: ''
+  });
+  const [savingPTO, setSavingPTO] = useState(false);
+
   useEffect(() => {
     fetchProviders();
   }, []);
+
+  // Fetch PTO balances when providers change
+  useEffect(() => {
+    if (providers.length > 0) {
+      fetchPTOBalances();
+    }
+  }, [providers]);
 
   const fetchProviders = async () => {
     setLoading(true);
@@ -47,6 +81,85 @@ export default function ProvidersAdminPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchPTOBalances = async () => {
+    setLoadingBalances(true);
+    const balances: Record<string, PTOBalance> = {};
+
+    // Fetch balances for all providers in parallel
+    await Promise.all(
+      providers.map(async (provider) => {
+        try {
+          const response = await fetch(`/api/providers/${provider.id}/pto-balance`);
+          if (response.ok) {
+            const data = await response.json();
+            balances[provider.id] = data;
+          }
+        } catch (error) {
+          console.error(`Error fetching PTO balance for ${provider.initials}:`, error);
+        }
+      })
+    );
+
+    setPtoBalances(balances);
+    setLoadingBalances(false);
+  };
+
+  const startEditPTO = (provider: Provider) => {
+    const balance = ptoBalances[provider.id];
+    setEditingPTO(provider);
+    setPtoFormData({
+      annual_allowance: balance?.allowance_source === 'provider_config' ? String(balance.annual_allowance) : '',
+      carryover_days: String(balance?.carryover_days || 0),
+      notes: ''
+    });
+  };
+
+  const handleSavePTO = async () => {
+    if (!editingPTO) return;
+
+    setSavingPTO(true);
+    try {
+      const year = new Date().getFullYear();
+      const response = await fetch(`/api/providers/${editingPTO.id}/pto-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          year,
+          annual_allowance: ptoFormData.annual_allowance ? parseFloat(ptoFormData.annual_allowance) : null,
+          carryover_days: parseFloat(ptoFormData.carryover_days) || 0,
+          notes: ptoFormData.notes || null
+        })
+      });
+
+      if (response.ok) {
+        setEditingPTO(null);
+        fetchPTOBalances();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to save PTO configuration');
+      }
+    } catch (error) {
+      console.error('Error saving PTO config:', error);
+      alert('Failed to save PTO configuration');
+    } finally {
+      setSavingPTO(false);
+    }
+  };
+
+  const getDefaultAllowance = (role: string): number => {
+    const defaults: Record<string, number> = {
+      'attending': 20,
+      'Attending': 20,
+      'fellow': 15,
+      'Fellow': 15,
+      'np': 15,
+      'NP': 15,
+      'pa': 15,
+      'PA': 15
+    };
+    return defaults[role] || 20;
   };
 
   const handleCreate = async () => {
@@ -260,6 +373,125 @@ export default function ProvidersAdminPage() {
         </div>
       )}
 
+      {/* PTO Configuration Modal */}
+      {editingPTO && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold mb-4" style={{ color: colors.primaryBlue }}>
+              PTO Settings - {editingPTO.initials}
+            </h3>
+
+            <div className="mb-4 p-3 rounded-lg bg-gray-50">
+              <div className="text-sm text-gray-600 mb-1">Role Default Allowance</div>
+              <div className="text-lg font-medium" style={{ color: colors.primaryBlue }}>
+                {getDefaultAllowance(editingPTO.role)} days/year
+              </div>
+              <div className="text-xs text-gray-400">
+                Based on {editingPTO.role === 'attending' || editingPTO.role === 'Attending' ? 'Attending' :
+                  editingPTO.role === 'fellow' || editingPTO.role === 'Fellow' ? 'Fellow' :
+                  editingPTO.role.toUpperCase()} role
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Custom Annual Allowance (days)
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={ptoFormData.annual_allowance}
+                  onChange={(e) => setPtoFormData(prev => ({ ...prev, annual_allowance: e.target.value }))}
+                  placeholder={`Leave empty to use role default (${getDefaultAllowance(editingPTO.role)})`}
+                  className="w-full px-3 py-2 border rounded"
+                  style={{ borderColor: colors.border }}
+                />
+                <div className="text-xs text-gray-400 mt-1">
+                  Leave empty to use role-based default
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Carryover Days
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={ptoFormData.carryover_days}
+                  onChange={(e) => setPtoFormData(prev => ({ ...prev, carryover_days: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded"
+                  style={{ borderColor: colors.border }}
+                />
+                <div className="text-xs text-gray-400 mt-1">
+                  Days carried over from previous year
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Notes (Optional)
+                </label>
+                <textarea
+                  value={ptoFormData.notes}
+                  onChange={(e) => setPtoFormData(prev => ({ ...prev, notes: e.target.value }))}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded resize-none"
+                  style={{ borderColor: colors.border }}
+                  placeholder="e.g., Negotiated extra days, FMLA adjustment..."
+                />
+              </div>
+
+              {ptoBalances[editingPTO.id] && (
+                <div className="p-3 rounded-lg" style={{ backgroundColor: '#EFF6FF' }}>
+                  <div className="text-sm font-medium" style={{ color: colors.primaryBlue }}>
+                    Current Year Summary
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">Days Used:</span>{' '}
+                      <span className="font-medium">{ptoBalances[editingPTO.id].days_used}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Remaining:</span>{' '}
+                      <span
+                        className="font-medium"
+                        style={{
+                          color: ptoBalances[editingPTO.id].days_remaining < 0 ? colors.ptoRed : colors.success
+                        }}
+                      >
+                        {ptoBalances[editingPTO.id].days_remaining}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-6">
+              <button
+                onClick={handleSavePTO}
+                disabled={savingPTO}
+                className="px-6 py-2 rounded text-white font-medium disabled:opacity-50"
+                style={{ backgroundColor: colors.primaryBlue }}
+              >
+                {savingPTO ? 'Saving...' : 'Save Configuration'}
+              </button>
+              <button
+                onClick={() => setEditingPTO(null)}
+                className="px-6 py-2 rounded border font-medium"
+                style={{ borderColor: colors.border }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Providers Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="w-full">
@@ -268,6 +500,7 @@ export default function ProvidersAdminPage() {
               <th className="px-4 py-3 text-left text-white text-sm font-medium">Initials</th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium">Name</th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium">Role</th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium">PTO Balance</th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium">Rooms</th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium">Capabilities</th>
               <th className="px-4 py-3 text-right text-white text-sm font-medium">Actions</th>
@@ -298,6 +531,50 @@ export default function ProvidersAdminPage() {
                      provider.role === 'pa' ? 'PA' :
                      provider.role === 'np' ? 'NP' : 'MD'}
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  {loadingBalances ? (
+                    <span className="text-xs text-gray-400">Loading...</span>
+                  ) : ptoBalances[provider.id] ? (
+                    <button
+                      onClick={() => startEditPTO(provider)}
+                      className="text-left group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="font-medium"
+                          style={{
+                            color: ptoBalances[provider.id].warning.level === 'exceeded' ? colors.ptoRed :
+                              ptoBalances[provider.id].warning.level === 'approaching' ? colors.warning :
+                              colors.success
+                          }}
+                        >
+                          {ptoBalances[provider.id].days_remaining}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          / {ptoBalances[provider.id].total_available}
+                        </span>
+                        <svg className="w-3 h-3 text-gray-400 group-hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </div>
+                      {ptoBalances[provider.id].pending_days > 0 && (
+                        <div className="text-xs text-gray-400">
+                          ({ptoBalances[provider.id].pending_days} pending)
+                        </div>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => startEditPTO(provider)}
+                      className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      Configure
+                    </button>
+                  )}
                 </td>
                 <td className="px-4 py-3">{provider.default_room_count}</td>
                 <td className="px-4 py-3">

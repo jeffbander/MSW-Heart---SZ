@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Provider, LeaveType, PTOTimeBlock } from '@/lib/types';
+import { Provider, LeaveType, PTOTimeBlock, PTOValidationWarning } from '@/lib/types';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -12,6 +12,10 @@ const colors = {
   border: '#E5E7EB',
   success: '#059669',
   error: '#DC2626',
+  warning: '#F59E0B',
+  warningBg: '#FFFBEB',
+  infoBg: '#EFF6FF',
+  info: '#3B82F6',
 };
 
 const leaveTypes: { value: LeaveType; label: string }[] = [
@@ -44,9 +48,114 @@ export default function PTOSubmissionPage() {
   const [timeBlock, setTimeBlock] = useState<PTOTimeBlock>('FULL');
   const [reason, setReason] = useState('');
 
+  // Validation state
+  const [warnings, setWarnings] = useState<PTOValidationWarning[]>([]);
+  const [validating, setValidating] = useState(false);
+  const [calculatedDays, setCalculatedDays] = useState<number | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [debugInfo, setDebugInfo] = useState<any>(null); // DEBUG - remove after debugging
+
+  // PTO Balance state
+  interface PTOBalance {
+    annual_allowance: number;
+    carryover_days: number;
+    total_available: number;
+    days_used: number;
+    days_remaining: number;
+    pending_days: number;
+    warning: {
+      level: 'none' | 'approaching' | 'exceeded';
+      message: string | null;
+    };
+  }
+  const [ptoBalance, setPtoBalance] = useState<PTOBalance | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
+
   useEffect(() => {
     fetchProviders();
   }, []);
+
+  // Fetch PTO balance when provider changes
+  useEffect(() => {
+    if (selectedProviderId) {
+      fetchPTOBalance(selectedProviderId);
+    } else {
+      setPtoBalance(null);
+    }
+  }, [selectedProviderId]);
+
+  async function fetchPTOBalance(providerId: string) {
+    setLoadingBalance(true);
+    try {
+      const res = await fetch(`/api/providers/${providerId}/pto-balance`);
+      if (res.ok) {
+        const data = await res.json();
+        setPtoBalance(data);
+      } else {
+        setPtoBalance(null);
+      }
+    } catch (err) {
+      console.error('Error fetching PTO balance:', err);
+      setPtoBalance(null);
+    } finally {
+      setLoadingBalance(false);
+    }
+  }
+
+  // Validate PTO when inputs change
+  const validatePTO = useCallback(async () => {
+    if (!selectedProviderId || !startDate || !endDate) {
+      setWarnings([]);
+      setCalculatedDays(null);
+      return;
+    }
+
+    // Validate dates
+    if (new Date(endDate) < new Date(startDate)) {
+      setWarnings([]);
+      setCalculatedDays(null);
+      return;
+    }
+
+    setValidating(true);
+    try {
+      const res = await fetch('/api/pto-requests/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider_id: selectedProviderId,
+          start_date: startDate,
+          end_date: endDate,
+          time_block: timeBlock,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setWarnings(data.warnings || []);
+        setCalculatedDays(data.calculated_days);
+        setDebugInfo(data._debug); // DEBUG - capture debug info
+      } else {
+        setWarnings([]);
+        setCalculatedDays(null);
+        setDebugInfo(null);
+      }
+    } catch (err) {
+      console.error('Error validating PTO:', err);
+      setWarnings([]);
+      setDebugInfo(null);
+    } finally {
+      setValidating(false);
+    }
+  }, [selectedProviderId, startDate, endDate, timeBlock]);
+
+  // Debounce validation
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      validatePTO();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [validatePTO]);
 
   async function fetchProviders() {
     try {
@@ -217,6 +326,72 @@ export default function PTOSubmissionPage() {
             </select>
           </div>
 
+          {/* PTO Balance Display */}
+          {loadingBalance && (
+            <div className="mb-6 p-4 rounded-lg bg-gray-50 animate-pulse">
+              <div className="h-4 bg-gray-200 rounded w-1/3 mb-2"></div>
+              <div className="h-6 bg-gray-200 rounded w-1/2"></div>
+            </div>
+          )}
+
+          {ptoBalance && !loadingBalance && (
+            <div
+              className="mb-6 p-4 rounded-lg border"
+              style={{
+                backgroundColor: ptoBalance.warning.level === 'exceeded' ? '#FEF2F2' :
+                  ptoBalance.warning.level === 'approaching' ? colors.warningBg : '#F0FDF4',
+                borderColor: ptoBalance.warning.level === 'exceeded' ? colors.error :
+                  ptoBalance.warning.level === 'approaching' ? colors.warning : colors.success
+              }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium" style={{ color: colors.primaryBlue }}>
+                  PTO Balance ({new Date().getFullYear()})
+                </span>
+                {ptoBalance.pending_days > 0 && (
+                  <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600">
+                    {ptoBalance.pending_days} day{ptoBalance.pending_days !== 1 ? 's' : ''} pending
+                  </span>
+                )}
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span
+                  className="text-2xl font-bold"
+                  style={{
+                    color: ptoBalance.warning.level === 'exceeded' ? colors.error :
+                      ptoBalance.warning.level === 'approaching' ? colors.warning : colors.success
+                  }}
+                >
+                  {ptoBalance.days_remaining}
+                </span>
+                <span className="text-sm text-gray-600">
+                  day{ptoBalance.days_remaining !== 1 ? 's' : ''} remaining
+                </span>
+                <span className="text-xs text-gray-400">
+                  ({ptoBalance.days_used} of {ptoBalance.total_available} used)
+                </span>
+              </div>
+              {ptoBalance.carryover_days > 0 && (
+                <div className="text-xs text-gray-500 mt-1">
+                  Includes {ptoBalance.carryover_days} carryover day{ptoBalance.carryover_days !== 1 ? 's' : ''}
+                </div>
+              )}
+              {ptoBalance.warning.level !== 'none' && ptoBalance.warning.message && (
+                <div
+                  className="mt-2 text-sm flex items-center gap-2"
+                  style={{
+                    color: ptoBalance.warning.level === 'exceeded' ? colors.error : colors.warning
+                  }}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  {ptoBalance.warning.message}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Date Range */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
@@ -247,6 +422,92 @@ export default function PTOSubmissionPage() {
               />
             </div>
           </div>
+
+          {/* Calculated Days Display */}
+          {calculatedDays !== null && (
+            <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: colors.infoBg }}>
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke={colors.info} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm" style={{ color: colors.info }}>
+                  This request equals <strong>{calculatedDays}</strong> PTO day{calculatedDays !== 1 ? 's' : ''} (excluding weekends and holidays)
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Validation loading */}
+          {validating && (
+            <div className="mb-4 text-sm text-gray-500">
+              Checking for conflicts...
+            </div>
+          )}
+
+          {/* PTO Warnings */}
+          {warnings.length > 0 && (
+            <div className="mb-6 space-y-3">
+              {warnings.map((warning, index) => (
+                <div
+                  key={index}
+                  className="p-3 rounded-lg border flex items-start gap-3"
+                  style={{
+                    backgroundColor: warning.severity === 'warning' ? colors.warningBg : colors.infoBg,
+                    borderColor: warning.severity === 'warning' ? colors.warning : colors.info,
+                  }}
+                >
+                  <svg
+                    className="w-5 h-5 flex-shrink-0 mt-0.5"
+                    fill="none"
+                    stroke={warning.severity === 'warning' ? colors.warning : colors.info}
+                    viewBox="0 0 24 24"
+                  >
+                    {warning.severity === 'warning' ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    )}
+                  </svg>
+                  <div className="flex-1">
+                    <p
+                      className="text-sm font-medium"
+                      style={{ color: warning.severity === 'warning' ? colors.warning : colors.info }}
+                    >
+                      {warning.type === 'other_providers_off' && 'Other Providers Off'}
+                      {warning.type === 'holiday_proximity' && 'Holiday Proximity'}
+                      {warning.type === 'assignment_conflict' && 'Schedule Conflict'}
+                      {warning.type === 'balance_warning' && 'PTO Balance'}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {warning.message}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* DEBUG INFO - Remove after debugging */}
+          {debugInfo && (
+            <div className="mb-6 p-4 rounded-lg border-2 border-dashed border-purple-400 bg-purple-50">
+              <div className="text-sm font-bold text-purple-700 mb-2">DEBUG INFO (remove after fixing)</div>
+              <div className="text-xs font-mono text-purple-900 space-y-1">
+                <div><strong>Query params:</strong> {JSON.stringify(debugInfo.query_params)}</div>
+                <div><strong>Overlapping leaves found:</strong> {debugInfo.overlapping_leaves_count}</div>
+                <div><strong>Overlapping requests found:</strong> {debugInfo.overlapping_requests_count}</div>
+                <div><strong>Final overlapping providers:</strong> {JSON.stringify(debugInfo.final_overlapping_providers)}</div>
+                <div><strong>Total warnings:</strong> {debugInfo.warnings_count}</div>
+                {debugInfo.overlapping_requests_raw && debugInfo.overlapping_requests_raw.length > 0 && (
+                  <div className="mt-2">
+                    <strong>Raw overlapping requests:</strong>
+                    <pre className="mt-1 p-2 bg-white rounded text-xs overflow-auto max-h-32">
+                      {JSON.stringify(debugInfo.overlapping_requests_raw, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Leave Type and Time Block */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

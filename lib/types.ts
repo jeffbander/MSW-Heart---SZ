@@ -264,9 +264,10 @@ export interface PTORequest {
 }
 
 export interface PTOValidationWarning {
-  type: 'other_providers_off' | 'holiday_proximity';
+  type: 'other_providers_off' | 'holiday_proximity' | 'assignment_conflict' | 'balance_warning';
+  severity: 'info' | 'warning' | 'error';
   message: string;
-  details: any;
+  details?: any;
 }
 
 export interface PTOValidationResult {

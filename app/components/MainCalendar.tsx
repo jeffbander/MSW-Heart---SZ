@@ -1652,6 +1652,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
           onSave={handleSaveAssignment}
           onDelete={handleRemoveAssignment}
           onClose={() => setEditingAssignment(null)}
+          getProviderPTOForDate={getProviderPTOForDate}
         />
       )}
 
