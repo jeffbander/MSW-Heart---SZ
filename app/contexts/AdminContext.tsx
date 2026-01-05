@@ -21,10 +21,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
   // Check session storage on mount
   useEffect(() => {
-    const stored = sessionStorage.getItem(STORAGE_KEY);
-    if (stored === 'true') {
-      setIsAuthenticated(true);
-      setIsAdminMode(true);
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem(STORAGE_KEY);
+        if (stored === 'true') {
+          setIsAuthenticated(true);
+          setIsAdminMode(true);
+        }
+      } catch (e) {
+        console.error('Error accessing sessionStorage:', e);
+      }
     }
   }, []);
 
@@ -32,7 +38,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     if (passcode === ADMIN_PASSCODE) {
       setIsAuthenticated(true);
       setIsAdminMode(true);
-      sessionStorage.setItem(STORAGE_KEY, 'true');
+      try {
+        sessionStorage.setItem(STORAGE_KEY, 'true');
+      } catch (e) {
+        console.error('Error setting sessionStorage:', e);
+      }
       return true;
     }
     return false;
@@ -41,7 +51,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setIsAuthenticated(false);
     setIsAdminMode(false);
-    sessionStorage.removeItem(STORAGE_KEY);
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+      console.error('Error removing sessionStorage:', e);
+    }
   };
 
   const setAdminMode = (enabled: boolean) => {

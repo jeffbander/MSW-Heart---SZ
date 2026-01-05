@@ -20,9 +20,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
   // Load collapsed state from localStorage and detect mobile
   useEffect(() => {
-    const stored = localStorage.getItem(COLLAPSED_KEY);
-    if (stored === 'true') {
-      setIsCollapsed(true);
+    if (typeof window === 'undefined') return;
+
+    try {
+      const stored = localStorage.getItem(COLLAPSED_KEY);
+      if (stored === 'true') {
+        setIsCollapsed(true);
+      }
+    } catch (e) {
+      console.error('Error accessing localStorage:', e);
     }
 
     const checkMobile = () => {
@@ -40,7 +46,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const handleToggleCollapse = () => {
     const newState = !isCollapsed;
     setIsCollapsed(newState);
-    localStorage.setItem(COLLAPSED_KEY, String(newState));
+    try {
+      localStorage.setItem(COLLAPSED_KEY, String(newState));
+    } catch (e) {
+      console.error('Error setting localStorage:', e);
+    }
   };
 
   return (

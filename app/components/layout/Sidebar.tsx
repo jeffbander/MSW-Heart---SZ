@@ -57,9 +57,11 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps)
 
   // Load custom tab order from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem(TAB_ORDER_KEY);
-    if (stored) {
-      try {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const stored = localStorage.getItem(TAB_ORDER_KEY);
+      if (stored) {
         const order = JSON.parse(stored) as string[];
         const reordered = order
           .map((id) => defaultTabs.find((t) => t.id === id))
@@ -71,9 +73,9 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps)
           }
         });
         setTabs(reordered);
-      } catch {
-        setTabs(defaultTabs);
       }
+    } catch {
+      setTabs(defaultTabs);
     }
   }, []);
 
