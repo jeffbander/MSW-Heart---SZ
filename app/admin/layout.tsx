@@ -16,6 +16,7 @@ const navItems = [
   { href: '/admin/providers', label: 'Providers' },
   { href: '/admin/services', label: 'Services' },
   { href: '/admin/templates', label: 'Templates' },
+  { href: '/admin/pto-requests', label: 'PTO Requests' },
   { href: '/admin/reports', label: 'Reports' },
 ];
 

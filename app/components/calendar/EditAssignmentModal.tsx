@@ -7,7 +7,7 @@ interface EditAssignmentModalProps {
   assignment: ScheduleAssignment;
   providers: Provider[];
   services: Service[];
-  onSave: (updates: { id: string; provider_id?: string; room_count?: number; notes?: string; time_block?: string }) => Promise<void>;
+  onSave: (updates: { id: string; provider_id?: string; room_count?: number; notes?: string; time_block?: string; is_covering?: boolean }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onClose: () => void;
 }
@@ -32,7 +32,8 @@ export default function EditAssignmentModal({
     provider_id: assignment.provider_id,
     room_count: assignment.room_count,
     notes: assignment.notes || '',
-    time_block: assignment.time_block
+    time_block: assignment.time_block,
+    is_covering: assignment.is_covering || false
   });
   const [saving, setSaving] = useState(false);
 
@@ -144,6 +145,19 @@ export default function EditAssignmentModal({
               rows={3}
               placeholder="Optional notes..."
             />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="is_covering"
+              checked={formData.is_covering}
+              onChange={(e) => setFormData(prev => ({ ...prev, is_covering: e.target.checked }))}
+              className="w-4 h-4"
+            />
+            <label htmlFor="is_covering" className="text-sm font-medium" style={{ color: formData.is_covering ? '#059669' : undefined }}>
+              Covering for someone
+            </label>
           </div>
         </div>
 

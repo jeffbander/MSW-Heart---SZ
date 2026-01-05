@@ -2,19 +2,24 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Service, Provider, ScheduleAssignment, AvailabilityViolation, ProviderAvailabilityRule } from '@/lib/types';
+import { Service, Provider, ScheduleAssignment, AvailabilityViolation, ProviderAvailabilityRule, ProviderLeave, DayMetadata } from '@/lib/types';
 import { Holiday, getHolidaysInRange, isInpatientService } from '@/lib/holidays';
 import ApplyTemplateModal from './ApplyTemplateModal';
 import AlternatingTemplateModal from './AlternatingTemplateModal';
 import SaveTemplateModal from './SaveTemplateModal';
 import AvailabilityWarningModal from './AvailabilityWarningModal';
 import PTOConflictModal from './PTOConflictModal';
+import EditAssignmentModal from './calendar/EditAssignmentModal';
+import DayMetadataModal from './DayMetadataModal';
 
 // Mount Sinai Colors
 const colors = {
   primaryBlue: '#003D7A',
   lightBlue: '#0078C8',
   teal: '#00A3AD',
+  chpAmber: '#F59E0B',
+  extraPurple: '#8B5CF6',
+  noteBlue: '#3B82F6',
   lightGray: '#F5F5F5',
   border: '#E5E7EB',
   ptoRed: '#DC2626',
@@ -37,7 +42,25 @@ const COVERAGE_REQUIRED_SERVICES = [
   'Nuclear', 'Nuclear Stress'
 ];
 
-export default function MainCalendar() {
+// Map services to required capabilities for suggestions
+const SERVICE_CAPABILITY_MAP: Record<string, string[]> = {
+  'Burgundy': ['Inpatient', 'Consults'],
+  'Consults': ['Inpatient', 'Consults'],
+  'Fourth Floor Echo Lab': ['Echo'],
+  'Echo TTE AM': ['Echo'],
+  'Echo TTE PM': ['Echo'],
+  'Stress Echo AM': ['Stress'],
+  'Stress Echo PM': ['Stress'],
+  'Nuclear': ['Nuclear'],
+  'Nuclear Stress': ['Nuclear'],
+  'Precepting': ['Precepting']
+};
+
+interface MainCalendarProps {
+  isAdmin?: boolean;
+}
+
+export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
   const [services, setServices] = useState<Service[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [assignments, setAssignments] = useState<ScheduleAssignment[]>([]);
@@ -76,6 +99,11 @@ export default function MainCalendar() {
 
   // Provider search in assignment modal
   const [providerSearchQuery, setProviderSearchQuery] = useState('');
+  // Covering checkbox in assignment modal
+  const [isCoveringAssignment, setIsCoveringAssignment] = useState(false);
+
+  // Edit assignment modal
+  const [editingAssignment, setEditingAssignment] = useState<ScheduleAssignment | null>(null);
 
   // Availability warning modal
   const [availabilityWarnings, setAvailabilityWarnings] = useState<AvailabilityViolation[]>([]);
@@ -89,6 +117,9 @@ export default function MainCalendar() {
   // Availability rules for filtering suggestions
   const [availabilityRules, setAvailabilityRules] = useState<ProviderAvailabilityRule[]>([]);
 
+  // Provider leaves for filtering suggestions
+  const [providerLeaves, setProviderLeaves] = useState<ProviderLeave[]>([]);
+
   // PTO conflict modal
   const [ptoConflictModal, setPtoConflictModal] = useState<{
     provider: Provider;
@@ -98,6 +129,13 @@ export default function MainCalendar() {
 
   // Track overridden conflicts (session only - resets on page refresh)
   const [overriddenConflicts, setOverriddenConflicts] = useState<Set<string>>(new Set());
+
+  // Day metadata (CHP room, extra room, notes)
+  const [dayMetadata, setDayMetadata] = useState<DayMetadata[]>([]);
+  const [metadataModalData, setMetadataModalData] = useState<{
+    date: string;
+    timeBlock: 'AM' | 'PM';
+  } | null>(null);
 
   // Calculate date range based on time frame
   const dateRange = useMemo(() => {
@@ -152,24 +190,54 @@ export default function MainCalendar() {
     fetchAvailabilityRules();
   }, []);
 
+  // Fetch provider leaves for filtering suggestions
+  useEffect(() => {
+    async function fetchProviderLeaves() {
+      try {
+        const response = await fetch(
+          `/api/leaves?startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`
+        );
+        const data = await response.json();
+        setProviderLeaves(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error('Error fetching provider leaves:', error);
+      }
+    }
+    fetchProviderLeaves();
+  }, [dateRange]);
+
+  // Check if a provider is on leave for a specific date
+  const isProviderOnLeave = (providerId: string, date: string): boolean => {
+    return providerLeaves.some(leave =>
+      leave.provider_id === providerId &&
+      date >= leave.start_date &&
+      date <= leave.end_date
+    );
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [servicesRes, providersRes, assignmentsRes] = await Promise.all([
+      const [servicesRes, providersRes, assignmentsRes, metadataRes] = await Promise.all([
         fetch('/api/services'),
         fetch('/api/providers'),
         fetch(
           `/api/assignments?startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`
+        ),
+        fetch(
+          `/api/day-metadata?startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`
         ),
       ]);
 
       const servicesData = await servicesRes.json();
       const providersData = await providersRes.json();
       const assignmentsData = await assignmentsRes.json();
+      const metadataData = await metadataRes.json();
 
       setServices(servicesData);
       setProviders(providersData);
       setAssignments(assignmentsData);
+      setDayMetadata(Array.isArray(metadataData) ? metadataData : []);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -294,7 +362,7 @@ export default function MainCalendar() {
     const rule = availabilityRules.find(r =>
       r.provider_id === providerId &&
       r.service_id === serviceId &&
-      r.day_of_week === dayOfWeek &&
+      Number(r.day_of_week) === dayOfWeek &&
       (r.time_block === timeBlock || r.time_block === 'BOTH')
     );
     return rule ? rule.enforcement : null; // null = available, 'warn' = soft warning, 'hard' = blocked
@@ -330,13 +398,13 @@ export default function MainCalendar() {
     // Find the rooms service for this time block
     const roomsServiceName = timeBlock === 'AM' ? 'Rooms AM' : 'Rooms PM';
     const roomsService = services.find(s => s.name === roomsServiceName);
-    if (!roomsService) return { needed: 0, target, currentRooms: 0, suggestions: [] };
+    if (!roomsService) return { needed: 0, target, currentRooms: 0, suggestions: [] as (Provider & { hasWarning: boolean; isPreceptorAvailable: boolean })[], fellowsInRooms: false };
 
     const currentAssignments = getAssignmentsForCell(roomsService.id, date, timeBlock);
     const currentRooms = currentAssignments.reduce((sum, a) => sum + (a.room_count || 0), 0);
     const needed = Math.max(0, target - currentRooms);
 
-    if (needed === 0) return { needed: 0, target, currentRooms, suggestions: [] };
+    if (needed === 0) return { needed: 0, target, currentRooms, suggestions: [] as (Provider & { hasWarning: boolean; isPreceptorAvailable: boolean })[], fellowsInRooms: false };
 
     // Services that block a provider from being suggested for rooms
     const BLOCKING_SERVICES = ['Consults', 'Burgundy', 'Fourth Floor Echo Lab', 'Offsites AM', 'Offsites PM'];
@@ -358,7 +426,7 @@ export default function MainCalendar() {
     const hasAnyHardBlock = (providerId: string) => {
       return availabilityRules.some(r =>
         r.provider_id === providerId &&
-        r.day_of_week === dayOfWeek &&
+        Number(r.day_of_week) === dayOfWeek &&
         (r.time_block === timeBlock || r.time_block === 'BOTH') &&
         r.enforcement === 'hard'
       );
@@ -368,7 +436,7 @@ export default function MainCalendar() {
     const hasAnyWarning = (providerId: string) => {
       return availabilityRules.some(r =>
         r.provider_id === providerId &&
-        r.day_of_week === dayOfWeek &&
+        Number(r.day_of_week) === dayOfWeek &&
         (r.time_block === timeBlock || r.time_block === 'BOTH') &&
         r.enforcement === 'warn'
       );
@@ -385,6 +453,9 @@ export default function MainCalendar() {
         if (!p.capabilities.includes('Rooms')) return false;
         if (assignedProviderIds.includes(p.id)) return false;
         if (getProviderPTOForDate(p.id, date).some(tb => tb === timeBlock || tb === 'BOTH')) return false;
+
+        // Exclude providers on leave
+        if (isProviderOnLeave(p.id, date)) return false;
 
         // Check if provider has a blocking assignment (Consults, Burgundy, Fourth Floor Echo Lab, Offsites)
         if (hasBlockingAssignment(p.id)) return false;
@@ -422,6 +493,87 @@ export default function MainCalendar() {
     }
 
     return { needed, target, currentRooms, suggestions: available, fellowsInRooms };
+  };
+
+  // Get suggestions for coverage services based on capability and availability
+  const getSuggestionsForService = (serviceName: string, date: string, timeBlock: string, assignedProviderIds: string[]) => {
+    const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+    const requiredCapabilities = SERVICE_CAPABILITY_MAP[serviceName] || [];
+
+    if (requiredCapabilities.length === 0) {
+      return { suggestions: [], serviceName };
+    }
+
+    // Check if provider has ANY hard availability block for this day/time (across all services)
+    const hasAnyHardBlock = (providerId: string) => {
+      return availabilityRules.some(r =>
+        r.provider_id === providerId &&
+        Number(r.day_of_week) === dayOfWeek &&
+        (r.time_block === timeBlock || r.time_block === 'BOTH') &&
+        r.enforcement === 'hard'
+      );
+    };
+
+    // Check if provider has ANY soft availability warning for this day/time (across all services)
+    const hasAnyWarning = (providerId: string) => {
+      return availabilityRules.some(r =>
+        r.provider_id === providerId &&
+        Number(r.day_of_week) === dayOfWeek &&
+        (r.time_block === timeBlock || r.time_block === 'BOTH') &&
+        r.enforcement === 'warn'
+      );
+    };
+
+    // Check if provider has a blocking assignment at this time
+    const hasBlockingAssignment = (providerId: string) => {
+      const providerAssignments = assignments.filter(a =>
+        a.provider_id === providerId &&
+        a.date === date &&
+        (a.time_block === timeBlock || a.time_block === 'BOTH')
+      );
+      // Provider is blocked if they have ANY assignment at this time
+      return providerAssignments.length > 0;
+    };
+
+    // Filter providers who have at least one of the required capabilities
+    const available = providers
+      .filter(p => {
+        // Must have at least one of the required capabilities
+        const hasRequiredCapability = requiredCapabilities.some(cap => p.capabilities.includes(cap));
+        if (!hasRequiredCapability) return false;
+
+        // Exclude already assigned providers
+        if (assignedProviderIds.includes(p.id)) return false;
+
+        // Exclude providers on leave
+        if (isProviderOnLeave(p.id, date)) return false;
+
+        // Exclude providers with PTO
+        if (getProviderPTOForDate(p.id, date).some(tb => tb === timeBlock || tb === 'BOTH')) return false;
+
+        // Exclude providers with other assignments
+        if (hasBlockingAssignment(p.id)) return false;
+
+        // Exclude providers with hard availability blocks
+        if (hasAnyHardBlock(p.id)) return false;
+
+        return true;
+      })
+      .map(p => ({
+        ...p,
+        hasWarning: hasAnyWarning(p.id),
+        matchingCapabilities: requiredCapabilities.filter(cap => p.capabilities.includes(cap))
+      }))
+      .sort((a, b) => {
+        // Sort providers without warnings first
+        if (a.hasWarning !== b.hasWarning) {
+          return a.hasWarning ? 1 : -1;
+        }
+        // Then by name
+        return a.name.localeCompare(b.name);
+      });
+
+    return { suggestions: available, serviceName };
   };
 
   // Navigation handlers
@@ -591,6 +743,7 @@ export default function MainCalendar() {
           time_block: selectedCell.timeBlock,
           room_count: service.requires_rooms ? provider.default_room_count : 0,
           is_pto: service.name === 'PTO',
+          is_covering: isCoveringAssignment,
         }),
       });
 
@@ -622,6 +775,7 @@ export default function MainCalendar() {
           time_block: pendingAssignment.timeBlock,
           room_count: service.requires_rooms ? provider.default_room_count : 0,
           is_pto: service.name === 'PTO',
+          is_covering: isCoveringAssignment,
           force_override: true
         }),
       });
@@ -652,9 +806,77 @@ export default function MainCalendar() {
     }
   };
 
+  const handleToggleCovering = async (assignmentId: string, currentValue: boolean) => {
+    try {
+      const response = await fetch('/api/assignments', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: assignmentId, is_covering: !currentValue })
+      });
+
+      if (response.ok) {
+        await fetchData();
+      }
+    } catch (error) {
+      console.error('Error toggling covering status:', error);
+    }
+  };
+
+  const handleSaveAssignment = async (updates: { id: string; provider_id?: string; room_count?: number; notes?: string; time_block?: string; is_covering?: boolean }) => {
+    try {
+      const response = await fetch('/api/assignments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+
+      if (response.ok) {
+        await fetchData();
+      }
+    } catch (error) {
+      console.error('Error saving assignment:', error);
+    }
+  };
+
   // Check if a service is full-day
   const isFullDayService = (serviceName: string) => {
     return FULL_DAY_SERVICES.includes(serviceName);
+  };
+
+  // Get day metadata for a specific date and time block
+  const getMetadataForCell = (date: string, timeBlock: 'AM' | 'PM') => {
+    return dayMetadata.find(m => m.date === date && m.time_block === timeBlock) || null;
+  };
+
+  // Get day note for a specific date (time_block = 'DAY')
+  const getDayNote = (date: string) => {
+    const meta = dayMetadata.find(m => m.date === date && m.time_block === 'DAY');
+    return meta?.day_note || null;
+  };
+
+  // Check if a date has any metadata (for showing indicators)
+  const hasMetadataForDate = (date: string) => {
+    return dayMetadata.some(m =>
+      m.date === date &&
+      (m.chp_room_in_use || m.extra_room_available || m.day_note)
+    );
+  };
+
+  // Save day metadata
+  const handleSaveMetadata = async (metadata: Partial<DayMetadata>) => {
+    try {
+      const response = await fetch('/api/day-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(metadata),
+      });
+
+      if (response.ok) {
+        await fetchData();
+      }
+    } catch (error) {
+      console.error('Error saving day metadata:', error);
+    }
   };
 
   if (loading) {
@@ -831,8 +1053,8 @@ export default function MainCalendar() {
             </div>
           </div>
 
-          {/* Template Actions - Show in week view */}
-          {timeFrame === 'week' && (
+          {/* Template Actions - Show in week view (Admin only) */}
+          {isAdmin && timeFrame === 'week' && (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowSaveTemplateModal(true)}
@@ -861,40 +1083,42 @@ export default function MainCalendar() {
             </div>
           )}
 
-          {/* Sandbox Mode Toggle */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                if (!sandboxMode) {
-                  // Start sandbox session
-                  try {
-                    const res = await fetch('/api/sandbox', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ action: 'create_session', name: `Sandbox ${new Date().toLocaleDateString()}` })
-                    });
-                    const session = await res.json();
-                    setSandboxSessionId(session.id);
-                    setSandboxMode(true);
-                  } catch (err) {
-                    console.error('Failed to start sandbox:', err);
+          {/* Sandbox Mode Toggle (Admin only) */}
+          {isAdmin && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  if (!sandboxMode) {
+                    // Start sandbox session
+                    try {
+                      const res = await fetch('/api/sandbox', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'create_session', name: `Sandbox ${new Date().toLocaleDateString()}` })
+                      });
+                      const session = await res.json();
+                      setSandboxSessionId(session.id);
+                      setSandboxMode(true);
+                    } catch (err) {
+                      console.error('Failed to start sandbox:', err);
+                    }
+                  } else {
+                    // Exit sandbox mode
+                    setSandboxMode(false);
+                    setSandboxSessionId(null);
                   }
-                } else {
-                  // Exit sandbox mode
-                  setSandboxMode(false);
-                  setSandboxSessionId(null);
-                }
-              }}
-              className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
-                sandboxMode
-                  ? 'bg-orange-500 text-white hover:bg-orange-600'
-                  : 'border hover:bg-gray-50'
-              }`}
-              style={!sandboxMode ? { borderColor: colors.border, color: colors.primaryBlue } : {}}
-            >
-              {sandboxMode ? '🧪 Exit Sandbox' : '🧪 Sandbox Mode'}
-            </button>
-          </div>
+                }}
+                className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                  sandboxMode
+                    ? 'bg-orange-500 text-white hover:bg-orange-600'
+                    : 'border hover:bg-gray-50'
+                }`}
+                style={!sandboxMode ? { borderColor: colors.border, color: colors.primaryBlue } : {}}
+              >
+                {sandboxMode ? '🧪 Exit Sandbox' : '🧪 Sandbox Mode'}
+              </button>
+            </div>
+          )}
 
           {/* Provider View Filters */}
           {viewMode === 'provider' && (
@@ -942,8 +1166,8 @@ export default function MainCalendar() {
         </div>
       </div>
 
-      {/* Sandbox Mode Banner */}
-      {sandboxMode && (
+      {/* Sandbox Mode Banner (Admin only) */}
+      {isAdmin && sandboxMode && (
         <div className="bg-orange-100 border-b-2 border-orange-400 px-4 py-3">
           <div className="max-w-full mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -1027,6 +1251,10 @@ export default function MainCalendar() {
             getOverrideKey={getOverrideKey}
             onPTOConflictClick={handlePTOConflictClick}
             hasFellowsInRooms={hasFellowsInRooms}
+            handleToggleCovering={handleToggleCovering}
+            onEditAssignment={setEditingAssignment}
+            getMetadataForCell={getMetadataForCell}
+            onOpenMetadataModal={(date, timeBlock) => setMetadataModalData({ date, timeBlock })}
           />
         ) : (
           <ProviderView
@@ -1066,7 +1294,7 @@ export default function MainCalendar() {
         return (
           <div
             className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30"
-            onClick={() => { setSelectedCell(null); setProviderSearchQuery(''); }}
+            onClick={() => { setSelectedCell(null); setProviderSearchQuery(''); setIsCoveringAssignment(false); }}
           >
             <div
               className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-auto"
@@ -1160,9 +1388,78 @@ export default function MainCalendar() {
                 return null;
               })()}
 
+              {/* Coverage Suggestions Section - for services that need coverage */}
+              {service && cellAssignments.length === 0 && (() => {
+                const dayOfWeek = new Date(selectedCell.date + 'T00:00:00').getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+                // Don't show suggestions on weekends
+                if (isWeekend) return null;
+
+                // Check if this service needs coverage suggestions
+                const isPrecepting = service.name === 'Precepting';
+                const isCoverageService = COVERAGE_REQUIRED_SERVICES.includes(service.name);
+
+                // For Precepting, only show if fellows are in Rooms
+                if (isPrecepting) {
+                  const hasFellowsAM = hasFellowsInRooms(selectedCell.date, 'AM');
+                  const hasFellowsPM = hasFellowsInRooms(selectedCell.date, 'PM');
+                  if (!hasFellowsAM && !hasFellowsPM) return null;
+                } else if (!isCoverageService) {
+                  return null;
+                }
+
+                const assignedIds = cellAssignments.map(a => a.provider_id);
+                const coverageSuggestions = getSuggestionsForService(service.name, selectedCell.date, selectedCell.timeBlock, assignedIds);
+
+                return (
+                  <div className="mb-4 p-3 rounded" style={{ backgroundColor: '#FFEDD5', border: '1px solid #059669' }}>
+                    <div className="font-semibold text-sm mb-2" style={{ color: '#9A3412' }}>
+                      💡 Coverage needed for {service.name}
+                    </div>
+                    {coverageSuggestions.suggestions.length > 0 ? (
+                      <div className="text-xs" style={{ color: '#9A3412' }}>
+                        <span className="font-medium">Available providers: </span>
+                        {coverageSuggestions.suggestions.slice(0, 6).map((p, i) => (
+                          <span
+                            key={p.id}
+                            style={{
+                              color: p.hasWarning ? '#F59E0B' : '#9A3412'
+                            }}
+                            title={p.hasWarning ? 'Has availability warning for this time' : `Capabilities: ${p.matchingCapabilities.join(', ')}`}
+                          >
+                            {i > 0 && ', '}
+                            {p.initials}{p.hasWarning ? ' ⚠️' : ''}
+                          </span>
+                        ))}
+                        {coverageSuggestions.suggestions.length > 6 && (
+                          <span className="text-gray-500"> +{coverageSuggestions.suggestions.length - 6} more</span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-xs" style={{ color: '#9A3412' }}>
+                        No available providers with required capability
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {availableProviders.length > 0 ? (
                 <div>
                   <h3 className="font-semibold mb-2 text-sm">Add Provider:</h3>
+                  <label className="flex items-center gap-2 mb-3 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isCoveringAssignment}
+                      onChange={(e) => setIsCoveringAssignment(e.target.checked)}
+                      className="w-4 h-4 rounded"
+                      style={{ accentColor: '#059669' }}
+                    />
+                    <span style={{ color: isCoveringAssignment ? '#059669' : undefined }}>
+                      Covering for someone
+                    </span>
+                  </label>
                   <input
                     type="text"
                     placeholder="Search by name or initials..."
@@ -1261,7 +1558,7 @@ export default function MainCalendar() {
               )}
 
               <button
-                onClick={() => { setSelectedCell(null); setProviderSearchQuery(''); }}
+                onClick={() => { setSelectedCell(null); setProviderSearchQuery(''); setIsCoveringAssignment(false); }}
                 className="mt-4 px-4 py-2 rounded w-full text-white hover:opacity-90"
                 style={{ backgroundColor: colors.primaryBlue }}
               >
@@ -1272,35 +1569,39 @@ export default function MainCalendar() {
         );
       })()}
 
-      {/* Template Modals */}
-      <ApplyTemplateModal
-        isOpen={showApplyTemplateModal}
-        onClose={() => setShowApplyTemplateModal(false)}
-        onApply={(result) => {
-          fetchData();
-          alert(`Template applied! Created ${result.created} assignments.`);
-        }}
-        defaultStartDate={dateRange[0]}
-        defaultEndDate={dateRange[dateRange.length - 1]}
-      />
+      {/* Template Modals (Admin only) */}
+      {isAdmin && (
+        <>
+          <ApplyTemplateModal
+            isOpen={showApplyTemplateModal}
+            onClose={() => setShowApplyTemplateModal(false)}
+            onApply={(result) => {
+              fetchData();
+              alert(`Template applied! Created ${result.created} assignments.`);
+            }}
+            defaultStartDate={dateRange[0]}
+            defaultEndDate={dateRange[dateRange.length - 1]}
+          />
 
-      <AlternatingTemplateModal
-        isOpen={showAlternatingModal}
-        onClose={() => setShowAlternatingModal(false)}
-        onApply={(result) => {
-          fetchData();
-          alert(`Alternating templates applied! Created ${result.created} assignments.`);
-        }}
-      />
+          <AlternatingTemplateModal
+            isOpen={showAlternatingModal}
+            onClose={() => setShowAlternatingModal(false)}
+            onApply={(result) => {
+              fetchData();
+              alert(`Alternating templates applied! Created ${result.created} assignments.`);
+            }}
+          />
 
-      <SaveTemplateModal
-        isOpen={showSaveTemplateModal}
-        onClose={() => setShowSaveTemplateModal(false)}
-        onSave={(result) => {
-          alert(`Template "${result.template.name}" saved with ${result.sourceWeek.assignmentCount} assignments!`);
-        }}
-        weekStartDate={dateRange[0]}
-      />
+          <SaveTemplateModal
+            isOpen={showSaveTemplateModal}
+            onClose={() => setShowSaveTemplateModal(false)}
+            onSave={(result) => {
+              alert(`Template "${result.template.name}" saved with ${result.sourceWeek.assignmentCount} assignments!`);
+            }}
+            weekStartDate={dateRange[0]}
+          />
+        </>
+      )}
 
       {/* Availability Warning Modal */}
       {availabilityWarnings.length > 0 && (
@@ -1339,6 +1640,29 @@ export default function MainCalendar() {
           }}
           onOverrideAll={() => handleOverrideConflict(ptoConflictModal.provider.id, ptoConflictModal.date)}
           onClose={() => setPtoConflictModal(null)}
+        />
+      )}
+
+      {/* Edit Assignment Modal */}
+      {editingAssignment && (
+        <EditAssignmentModal
+          assignment={editingAssignment}
+          providers={providers}
+          services={services}
+          onSave={handleSaveAssignment}
+          onDelete={handleRemoveAssignment}
+          onClose={() => setEditingAssignment(null)}
+        />
+      )}
+
+      {/* Day Metadata Modal */}
+      {metadataModalData && (
+        <DayMetadataModal
+          date={metadataModalData.date}
+          timeBlock={metadataModalData.timeBlock}
+          existingMetadata={getMetadataForCell(metadataModalData.date, metadataModalData.timeBlock)}
+          onSave={handleSaveMetadata}
+          onClose={() => setMetadataModalData(null)}
         />
       )}
 
@@ -1381,6 +1705,10 @@ interface ServiceViewProps {
   getOverrideKey: (providerId: string, date: string) => string;
   onPTOConflictClick: (provider: Provider, date: string, ptoTimeBlocks: string[]) => void;
   hasFellowsInRooms: (date: string, timeBlock: string) => boolean;
+  handleToggleCovering: (assignmentId: string, currentValue: boolean) => Promise<void>;
+  onEditAssignment: (assignment: ScheduleAssignment) => void;
+  getMetadataForCell: (date: string, timeBlock: 'AM' | 'PM') => DayMetadata | null;
+  onOpenMetadataModal: (date: string, timeBlock: 'AM' | 'PM') => void;
 }
 
 // Service grouping configuration
@@ -1411,6 +1739,10 @@ function ServiceView({
   getOverrideKey,
   onPTOConflictClick,
   hasFellowsInRooms,
+  handleToggleCovering,
+  onEditAssignment,
+  getMetadataForCell,
+  onOpenMetadataModal,
 }: ServiceViewProps) {
   // Helper to find service by name
   const findService = (name: string) => services.find((s) => s.name === name);
@@ -1665,9 +1997,17 @@ function ServiceView({
           <div className="text-xs font-medium">
             {cellAssignments.length > 0 ? (
               cellAssignments.map((a, idx) => {
-                const providerColor = a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue;
+                const providerColor = a.is_covering === true ? '#059669' : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue);
                 return (
-                  <span key={a.id} style={{ color: providerColor }}>
+                  <span
+                    key={a.id}
+                    style={{ color: providerColor, cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditAssignment(a);
+                    }}
+                    title="Click to edit"
+                  >
                     {idx > 0 && ', '}{a.provider?.initials}
                   </span>
                 );
@@ -1694,6 +2034,66 @@ function ServiceView({
               )).reduce((prev, curr, i) => i === 0 ? [curr] : [...prev, ', ', curr], [] as React.ReactNode[])}
             </div>
           )}
+          {/* CHP and Extra Room badges + Notes button */}
+          {(() => {
+            const metadata = getMetadataForCell(date, row.timeBlock as 'AM' | 'PM');
+            const hasMetadata = metadata && (metadata.chp_room_in_use || metadata.extra_room_available || metadata.day_note);
+            return (
+              <div className="flex justify-center gap-1 mt-1 flex-wrap">
+                {metadata?.chp_room_in_use && (
+                  <span
+                    className="text-[9px] px-1 rounded cursor-pointer"
+                    style={{ backgroundColor: '#FEF3C7', color: colors.chpAmber }}
+                    title={metadata.chp_room_note || 'CHP room in use'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenMetadataModal(date, row.timeBlock as 'AM' | 'PM');
+                    }}
+                  >
+                    CHP
+                  </span>
+                )}
+                {metadata?.extra_room_available && (
+                  <span
+                    className="text-[9px] px-1 rounded cursor-pointer"
+                    style={{ backgroundColor: '#EDE9FE', color: colors.extraPurple }}
+                    title={metadata.extra_room_note || 'Extra room available'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenMetadataModal(date, row.timeBlock as 'AM' | 'PM');
+                    }}
+                  >
+                    +Extra
+                  </span>
+                )}
+                {metadata?.day_note && (
+                  <span
+                    className="text-[9px] px-1 rounded cursor-pointer"
+                    style={{ backgroundColor: '#DBEAFE', color: colors.noteBlue }}
+                    title={metadata.day_note}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenMetadataModal(date, row.timeBlock as 'AM' | 'PM');
+                    }}
+                  >
+                    Note
+                  </span>
+                )}
+                {/* Always show a button to add/edit room notes */}
+                <span
+                  className="text-[9px] px-1 rounded cursor-pointer opacity-50 hover:opacity-100"
+                  style={{ backgroundColor: '#F3F4F6', color: '#6B7280' }}
+                  title="Add room notes (CHP, Extra, Notes)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenMetadataModal(date, row.timeBlock as 'AM' | 'PM');
+                  }}
+                >
+                  {hasMetadata ? '...' : '+'}
+                </span>
+              </div>
+            );
+          })()}
         </td>
       );
     }
@@ -1767,8 +2167,8 @@ function ServiceView({
               const isOverridden = a.provider ? overriddenConflicts.has(getOverrideKey(a.provider.id, date)) : false;
               const hasActiveConflicts = hasPTOToday && conflicts.length > 0 && !isOverridden;
 
-              // Determine provider color: PTO = red, Fellow = purple, Attending = blue
-              const providerColor = isPTO ? colors.ptoRed : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue);
+              // Determine provider color: Covering = orange, PTO = red, Fellow = purple, Attending = blue
+              const providerColor = a.is_covering === true ? '#059669' : (isPTO ? colors.ptoRed : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue));
 
               return (
                 <span key={a.id}>
@@ -1779,8 +2179,13 @@ function ServiceView({
                       backgroundColor: hasActiveConflicts ? `${colors.ptoRed}20` : undefined,
                       padding: hasActiveConflicts ? '1px 3px' : undefined,
                       borderRadius: hasActiveConflicts ? '2px' : undefined,
+                      cursor: 'pointer',
                     }}
-                    title={hasPTOToday ? ptoTooltip : undefined}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditAssignment(a);
+                    }}
+                    title="Click to edit"
                   >
                     {a.provider?.initials}
                     {hasActiveConflicts && <span style={{ color: colors.ptoRed }}>*</span>}
@@ -1924,9 +2329,17 @@ function ServiceView({
                       {cellAssignments.length > 0 ? (
                         <div className="text-xs font-medium">
                           {cellAssignments.map((a, idx) => {
-                            const providerColor = isPTO ? colors.ptoRed : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue);
+                            const providerColor = a.is_covering === true ? '#059669' : (isPTO ? colors.ptoRed : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue));
                             return (
-                              <span key={a.id} style={{ color: providerColor }}>
+                              <span
+                                key={a.id}
+                                style={{ color: providerColor, cursor: 'pointer' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditAssignment(a);
+                                }}
+                                title="Click to edit"
+                              >
                                 {idx > 0 && ', '}{a.provider?.initials}
                               </span>
                             );
@@ -2036,9 +2449,17 @@ function ServiceView({
                         {cellAssignments.length > 0 ? (
                           <div className="text-xs font-medium">
                             {cellAssignments.map((a, idx) => {
-                              const providerColor = a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue;
+                              const providerColor = a.is_covering === true ? '#059669' : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue);
                               return (
-                                <span key={a.id} style={{ color: providerColor }}>
+                                <span
+                                  key={a.id}
+                                  style={{ color: providerColor, cursor: 'pointer' }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEditAssignment(a);
+                                  }}
+                                  title="Click to edit"
+                                >
                                   {idx > 0 && ', '}{a.provider?.initials}
                                 </span>
                               );
@@ -2061,9 +2482,17 @@ function ServiceView({
                         {cellAssignments.length > 0 ? (
                           <div className="text-xs font-medium">
                             {cellAssignments.map((a, idx) => {
-                              const providerColor = a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue;
+                              const providerColor = a.is_covering === true ? '#059669' : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue);
                               return (
-                                <span key={a.id} style={{ color: providerColor }}>
+                                <span
+                                  key={a.id}
+                                  style={{ color: providerColor, cursor: 'pointer' }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEditAssignment(a);
+                                  }}
+                                  title="Click to edit"
+                                >
                                   {idx > 0 && ', '}{a.provider?.initials}
                                 </span>
                               );
@@ -2232,9 +2661,17 @@ function ServiceView({
                                   {displayName}:
                                 </span>{' '}
                                 {cellAssignments.map((a, idx) => {
-                                  const providerColor = isPTO ? colors.ptoRed : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue);
+                                  const providerColor = a.is_covering === true ? '#059669' : (isPTO ? colors.ptoRed : (a.provider?.role === 'fellow' ? colors.fellowPurple : colors.primaryBlue));
                                   return (
-                                    <span key={a.id} style={{ color: providerColor }}>
+                                    <span
+                                      key={a.id}
+                                      style={{ color: providerColor, cursor: 'pointer' }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onEditAssignment(a);
+                                      }}
+                                      title="Click to edit"
+                                    >
                                       {idx > 0 && ', '}{a.provider?.initials}
                                     </span>
                                   );

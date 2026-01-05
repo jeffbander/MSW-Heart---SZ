@@ -9,7 +9,7 @@ const colors = {
   border: '#E5E7EB',
 };
 
-type ReportType = 'general-stats' | 'provider-workload' | 'service-coverage' | 'room-utilization' | 'pto-summary';
+type ReportType = 'general-stats' | 'provider-workload' | 'service-coverage' | 'room-utilization' | 'pto-summary' | 'rooms-open-monthly';
 
 export default function ReportsPage() {
   const [reportType, setReportType] = useState<ReportType>('general-stats');
@@ -26,12 +26,15 @@ export default function ReportsPage() {
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
+  const [copied, setCopied] = useState(false);
+
   const reportTypes = [
     { value: 'general-stats', label: 'General Statistics' },
     { value: 'provider-workload', label: 'Provider Workload' },
     { value: 'service-coverage', label: 'Service Coverage' },
     { value: 'room-utilization', label: 'Room Utilization' },
     { value: 'pto-summary', label: 'PTO Summary' },
+    { value: 'rooms-open-monthly', label: 'Open Rooms (Monthly)' },
   ];
 
   const generateReport = async () => {
@@ -172,6 +175,7 @@ export default function ReportsPage() {
                   <th className="px-4 py-3 text-left text-white text-sm font-medium">Date</th>
                   <th className="px-4 py-3 text-center text-white text-sm font-medium">Time Block</th>
                   <th className="px-4 py-3 text-center text-white text-sm font-medium">Rooms Used</th>
+                  <th className="px-4 py-3 text-center text-white text-sm font-medium">Open Rooms</th>
                   <th className="px-4 py-3 text-left text-white text-sm font-medium">Providers</th>
                 </tr>
               </thead>
@@ -182,11 +186,17 @@ export default function ReportsPage() {
                   const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && item.timeBlock === 'PM';
                   const maxGreen = isExtendedDay ? 15 : 14;
 
-                  const getColor = () => {
+                  const getUsedColor = () => {
                     if (item.totalRooms === 0) return '#9CA3AF'; // gray
                     if (item.totalRooms < 12) return '#D97706'; // yellow/orange - under
                     if (item.totalRooms <= maxGreen) return colors.teal; // green - optimal
                     return '#DC2626'; // red - over
+                  };
+
+                  const getOpenColor = () => {
+                    if (item.unusedRooms === 0) return colors.teal; // green - fully covered
+                    if (item.unusedRooms <= 2) return '#D97706'; // orange - a few open
+                    return '#DC2626'; // red - many open
                   };
 
                   return (
@@ -196,9 +206,17 @@ export default function ReportsPage() {
                       <td className="px-4 py-3 text-center">
                         <span
                           className="font-bold"
-                          style={{ color: getColor() }}
+                          style={{ color: getUsedColor() }}
                         >
                           {item.totalRooms}/{item.maxRooms}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className="font-bold"
+                          style={{ color: getOpenColor() }}
+                        >
+                          {item.unusedRooms}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -245,6 +263,55 @@ export default function ReportsPage() {
             </table>
           </div>
         );
+
+      case 'rooms-open-monthly': {
+        // Generate month name from date range
+        const monthDate = new Date(report.dateRange.startDate + 'T00:00:00');
+        const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+        // Build the plain text report
+        const lines = [`These are our open rooms for ${monthName}:`, ''];
+        report.data.forEach((slot: any) => {
+          lines.push(`${slot.dayName} ${slot.timeBlock} - ${slot.openRooms} room${slot.openRooms > 1 ? 's' : ''}`);
+        });
+
+        if (report.data.length === 0) {
+          lines.push('All rooms are fully covered!');
+        }
+
+        const reportText = lines.join('\n');
+
+        const handleCopy = () => {
+          navigator.clipboard.writeText(reportText);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        };
+
+        return (
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold" style={{ color: colors.primaryBlue }}>
+                Open Rooms Report
+              </h3>
+              <button
+                onClick={handleCopy}
+                className="px-4 py-2 rounded text-white font-medium transition-colors"
+                style={{ backgroundColor: copied ? colors.teal : colors.lightBlue }}
+              >
+                {copied ? 'Copied!' : 'Copy to Clipboard'}
+              </button>
+            </div>
+            <pre className="bg-gray-50 p-4 rounded border text-sm font-mono whitespace-pre-wrap" style={{ borderColor: colors.border }}>
+              {reportText}
+            </pre>
+            {report.data.length > 0 && (
+              <div className="mt-4 text-sm text-gray-500">
+                Total: {report.totalOpenRooms} open room{report.totalOpenRooms !== 1 ? 's' : ''} across {report.data.length} time slot{report.data.length !== 1 ? 's' : ''}
+              </div>
+            )}
+          </div>
+        );
+      }
 
       default:
         return <div className="text-gray-500">Unknown report type</div>;

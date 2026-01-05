@@ -13,29 +13,33 @@ interface Stats {
   providers: number;
   services: number;
   assignments: number;
+  pendingPTO: number;
 }
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<Stats>({ providers: 0, services: 0, assignments: 0 });
+  const [stats, setStats] = useState<Stats>({ providers: 0, services: 0, assignments: 0, pendingPTO: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchStats() {
       try {
-        const [providersRes, servicesRes, assignmentsRes] = await Promise.all([
+        const [providersRes, servicesRes, assignmentsRes, ptoRes] = await Promise.all([
           fetch('/api/providers'),
           fetch('/api/services?all=true'),
-          fetch('/api/assignments')
+          fetch('/api/assignments'),
+          fetch('/api/pto-requests?status=pending')
         ]);
 
         const providers = await providersRes.json();
         const services = await servicesRes.json();
         const assignments = await assignmentsRes.json();
+        const pendingPTO = await ptoRes.json();
 
         setStats({
           providers: Array.isArray(providers) ? providers.length : 0,
           services: Array.isArray(services) ? services.length : 0,
-          assignments: Array.isArray(assignments) ? assignments.length : 0
+          assignments: Array.isArray(assignments) ? assignments.length : 0,
+          pendingPTO: Array.isArray(pendingPTO) ? pendingPTO.length : 0
         });
       } catch (error) {
         console.error('Error fetching stats:', error);
@@ -51,6 +55,7 @@ export default function AdminDashboard() {
     { label: 'Total Providers', value: stats.providers, href: '/admin/providers', color: colors.primaryBlue },
     { label: 'Total Services', value: stats.services, href: '/admin/services', color: colors.lightBlue },
     { label: 'Total Assignments', value: stats.assignments, href: '/', color: colors.teal },
+    { label: 'Pending PTO Requests', value: stats.pendingPTO, href: '/admin/pto-requests', color: stats.pendingPTO > 0 ? '#F59E0B' : colors.teal },
   ];
 
   if (loading) {
@@ -64,7 +69,7 @@ export default function AdminDashboard() {
       </h2>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         {cards.map((card) => (
           <Link
             key={card.label}
@@ -97,6 +102,13 @@ export default function AdminDashboard() {
         >
           <div className="text-2xl mb-2">+</div>
           <div className="font-medium" style={{ color: colors.primaryBlue }}>Manage Services</div>
+        </Link>
+        <Link
+          href="/admin/pto-requests"
+          className="p-4 bg-white rounded-lg shadow text-center hover:shadow-md transition-shadow"
+        >
+          <div className="text-2xl mb-2">+</div>
+          <div className="font-medium" style={{ color: colors.primaryBlue }}>PTO Requests</div>
         </Link>
         <Link
           href="/admin/reports"

@@ -26,6 +26,7 @@ export interface ScheduleAssignment {
   time_block: string;
   room_count: number;
   is_pto: boolean;
+  is_covering: boolean;
   notes: string | null;
   created_at: string;
   service?: Service;
@@ -105,6 +106,7 @@ export interface RoomUtilizationReport {
     timeBlock: string;
     totalRooms: number;
     maxRooms: number;
+    unusedRooms: number;
     providers: Array<{ initials: string; rooms: number }>;
   }>;
 }
@@ -221,4 +223,74 @@ export interface AvailabilityViolation {
   service_name: string;
   enforcement: AvailabilityEnforcement;
   reason: string | null;
+}
+
+// Day Metadata Types (CHP Room, Extra Room, Day Notes)
+export interface DayMetadata {
+  id: string;
+  date: string;
+  time_block: 'AM' | 'PM' | 'DAY';
+  chp_room_in_use: boolean;
+  chp_room_note: string | null;
+  extra_room_available: boolean;
+  extra_room_note: string | null;
+  day_note: string | null;
+  created_at: string;
+}
+
+// Provider Leave Types
+export type LeaveType = 'maternity' | 'vacation' | 'medical' | 'personal' | 'conference' | 'other';
+
+// PTO Request Types
+export type PTORequestStatus = 'pending' | 'approved' | 'denied';
+export type PTOTimeBlock = 'AM' | 'PM' | 'FULL';
+
+export interface PTORequest {
+  id: string;
+  provider_id: string;
+  start_date: string;
+  end_date: string;
+  leave_type: LeaveType;
+  time_block: PTOTimeBlock;
+  reason: string | null;
+  status: PTORequestStatus;
+  requested_by: 'provider' | 'admin';
+  reviewed_by_admin_name: string | null;
+  reviewed_at: string | null;
+  admin_comment: string | null;
+  created_at: string;
+  updated_at?: string;
+  provider?: Provider;
+}
+
+export interface PTOValidationWarning {
+  type: 'other_providers_off' | 'holiday_proximity';
+  message: string;
+  details: any;
+}
+
+export interface PTOValidationResult {
+  calculated_days: number;
+  warnings: PTOValidationWarning[];
+  can_submit: boolean;
+}
+
+export interface PTOSummary {
+  provider_id: string;
+  year: number;
+  total_pto_days: number;
+  requests_by_type: Record<string, number>;
+  holidays_taken: number;
+  approved_requests: PTORequest[];
+}
+
+export interface ProviderLeave {
+  id: string;
+  provider_id: string;
+  start_date: string;
+  end_date: string;
+  leave_type: LeaveType;
+  reason: string | null;
+  created_at: string;
+  provider?: Provider;
 }

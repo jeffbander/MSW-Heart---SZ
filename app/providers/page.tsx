@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Provider } from '@/lib/types';
+import { Provider, PTOSummary } from '@/lib/types';
 
 // Mount Sinai Colors
 const colors = {
@@ -18,6 +18,7 @@ export default function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [ptoSummaries, setPtoSummaries] = useState<Map<string, PTOSummary>>(new Map());
 
   useEffect(() => {
     async function fetchProviders() {
@@ -30,6 +31,21 @@ export default function ProvidersPage() {
         console.error('Error fetching providers:', error);
       } else {
         setProviders(data || []);
+        // Fetch PTO summaries for all providers
+        const year = new Date().getFullYear();
+        const summaries = new Map<string, PTOSummary>();
+        for (const provider of data || []) {
+          try {
+            const res = await fetch(`/api/providers/${provider.id}/pto-summary?year=${year}`);
+            if (res.ok) {
+              const summary = await res.json();
+              summaries.set(provider.id, summary);
+            }
+          } catch (e) {
+            // Ignore errors for individual summaries
+          }
+        }
+        setPtoSummaries(summaries);
       }
       setLoading(false);
     }
@@ -87,7 +103,6 @@ export default function ProvidersPage() {
               className="w-full px-4 py-3 pl-10 border rounded-lg shadow-sm focus:outline-none focus:ring-2"
               style={{
                 borderColor: colors.border,
-                focusRing: colors.lightBlue,
               }}
             />
             <svg
@@ -173,9 +188,9 @@ export default function ProvidersPage() {
                   {provider.name}
                 </h2>
 
-                {/* Room Count */}
-                {provider.default_room_count > 0 && (
-                  <div className="text-sm text-gray-600 mb-2">
+                {/* Room Count & PTO */}
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {provider.default_room_count > 0 && (
                     <span
                       className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
                       style={{
@@ -185,8 +200,19 @@ export default function ProvidersPage() {
                     >
                       {provider.default_room_count} room{provider.default_room_count > 1 ? 's' : ''}
                     </span>
-                  </div>
-                )}
+                  )}
+                  {ptoSummaries.get(provider.id)?.total_pto_days !== undefined && ptoSummaries.get(provider.id)!.total_pto_days > 0 && (
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                      style={{
+                        backgroundColor: '#DC262615',
+                        color: '#DC2626'
+                      }}
+                    >
+                      {ptoSummaries.get(provider.id)!.total_pto_days} PTO day{ptoSummaries.get(provider.id)!.total_pto_days !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
 
                 {/* Capabilities Preview */}
                 <div className="flex flex-wrap gap-1 mt-2">

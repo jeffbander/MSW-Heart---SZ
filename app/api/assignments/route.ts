@@ -12,7 +12,16 @@ export async function GET(request: Request) {
     let query = supabase
       .from('schedule_assignments')
       .select(`
-        *,
+        id,
+        date,
+        service_id,
+        provider_id,
+        time_block,
+        room_count,
+        is_pto,
+        is_covering,
+        notes,
+        created_at,
         service:services(*),
         provider:providers(*)
       `);
@@ -40,6 +49,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    console.log('Creating assignment with body:', JSON.stringify(body, null, 2));
 
     // Check if date is a holiday (allow inpatient services only)
     const holiday = isHoliday(body.date);
@@ -117,10 +127,22 @@ export async function POST(request: Request) {
     const { data, error } = await supabase
       .from('schedule_assignments')
       .insert(body)
-      .select();
+      .select(`
+        id,
+        date,
+        service_id,
+        provider_id,
+        time_block,
+        room_count,
+        is_pto,
+        is_covering,
+        notes,
+        created_at
+      `);
 
     if (error) throw error;
 
+    console.log('Created assignment result:', JSON.stringify(data, null, 2));
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error creating assignment:', error);

@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Provider, Service, ScheduleAssignment } from '@/lib/types';
+import { Provider, Service, ScheduleAssignment, PTOSummary } from '@/lib/types';
 import ProviderAvailabilityEditor from '@/app/components/ProviderAvailabilityEditor';
+import ProviderLeaveManager from '@/app/components/ProviderLeaveManager';
+import ProviderAssignmentModal from '@/app/components/ProviderAssignmentModal';
 
 // Mount Sinai Colors
 const colors = {
@@ -69,6 +71,11 @@ export default function ProviderProfilePage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [services, setServices] = useState<Service[]>([]);
   const [showAvailabilityEditor, setShowAvailabilityEditor] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<{
+    date: string;
+    timeBlock: 'AM' | 'PM';
+  } | null>(null);
+  const [ptoSummary, setPtoSummary] = useState<PTOSummary | null>(null);
 
   // Fetch provider data
   useEffect(() => {
@@ -100,41 +107,61 @@ export default function ProviderProfilePage() {
     fetchServices();
   }, []);
 
+  // Fetch PTO summary
+  useEffect(() => {
+    async function fetchPTOSummary() {
+      if (!provider) return;
+      try {
+        const year = new Date().getFullYear();
+        const res = await fetch(`/api/providers/${provider.id}/pto-summary?year=${year}`);
+        if (res.ok) {
+          const data = await res.json();
+          setPtoSummary(data);
+        }
+      } catch (error) {
+        console.error('Error fetching PTO summary:', error);
+      }
+    }
+    fetchPTOSummary();
+  }, [provider]);
+
+  // Fetch assignments function (reusable)
+  const fetchAssignments = async () => {
+    if (!provider) return;
+
+    let startDate: string;
+    let endDate: string;
+
+    if (viewMode === 'week') {
+      const weekStart = getStartOfWeek(currentDate);
+      const weekEnd = addDays(weekStart, 6);
+      startDate = formatDate(weekStart);
+      endDate = formatDate(weekEnd);
+    } else {
+      const { start, end } = getMonthRange(currentDate);
+      startDate = formatDate(start);
+      endDate = formatDate(end);
+    }
+
+    const { data, error } = await supabase
+      .from('schedule_assignments')
+      .select('*, service:services(*)')
+      .eq('provider_id', provider.id)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date');
+
+    if (error) {
+      console.error('Error fetching assignments:', error);
+    } else {
+      setAssignments(data || []);
+    }
+    setLoading(false);
+  };
+
   // Fetch assignments based on view mode and date
   useEffect(() => {
     if (!provider) return;
-
-    async function fetchAssignments() {
-      let startDate: string;
-      let endDate: string;
-
-      if (viewMode === 'week') {
-        const weekStart = getStartOfWeek(currentDate);
-        const weekEnd = addDays(weekStart, 6);
-        startDate = formatDate(weekStart);
-        endDate = formatDate(weekEnd);
-      } else {
-        const { start, end } = getMonthRange(currentDate);
-        startDate = formatDate(start);
-        endDate = formatDate(end);
-      }
-
-      const { data, error } = await supabase
-        .from('schedule_assignments')
-        .select('*, service:services(*)')
-        .eq('provider_id', provider.id)
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('date');
-
-      if (error) {
-        console.error('Error fetching assignments:', error);
-      } else {
-        setAssignments(data || []);
-      }
-      setLoading(false);
-    }
-
     fetchAssignments();
   }, [provider, viewMode, currentDate]);
 
@@ -276,6 +303,43 @@ export default function ProviderProfilePage() {
                 </button>
               </div>
             </div>
+
+            {/* PTO Summary Card */}
+            {ptoSummary && (
+              <div
+                className="rounded-lg p-4 min-w-[200px]"
+                style={{ backgroundColor: colors.lightBlueBg }}
+              >
+                <h3 className="text-sm font-semibold mb-2" style={{ color: colors.primaryBlue }}>
+                  PTO Summary ({ptoSummary.year})
+                </h3>
+                <div className="text-2xl font-bold mb-1" style={{ color: colors.pto }}>
+                  {ptoSummary.total_pto_days} day{ptoSummary.total_pto_days !== 1 ? 's' : ''}
+                </div>
+                {Object.keys(ptoSummary.requests_by_type).length > 0 && (
+                  <div className="text-xs text-gray-600 space-y-0.5">
+                    {Object.entries(ptoSummary.requests_by_type).map(([type, days]) => (
+                      <div key={type} className="flex justify-between">
+                        <span className="capitalize">{type}:</span>
+                        <span>{days} day{days !== 1 ? 's' : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {ptoSummary.holidays_taken > 0 && (
+                  <div className="mt-2 text-xs" style={{ color: colors.teal }}>
+                    {ptoSummary.holidays_taken} request{ptoSummary.holidays_taken !== 1 ? 's' : ''} near holidays
+                  </div>
+                )}
+                <Link
+                  href="/pto-requests"
+                  className="mt-2 inline-block text-xs underline"
+                  style={{ color: colors.lightBlue }}
+                >
+                  Request PTO →
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Availability Editor */}
@@ -364,6 +428,7 @@ export default function ProviderProfilePage() {
           <WeeklySchedule
             assignments={assignments}
             currentDate={currentDate}
+            onCellClick={(date, timeBlock) => setSelectedSlot({ date, timeBlock })}
           />
         ) : (
           <MonthlySchedule
@@ -371,7 +436,33 @@ export default function ProviderProfilePage() {
             currentDate={currentDate}
           />
         )}
+
+        {/* Leave Manager */}
+        <div className="mt-6">
+          <ProviderLeaveManager
+            providerId={provider.id}
+            providerName={provider.name}
+          />
+        </div>
       </main>
+
+      {/* Assignment Modal */}
+      {selectedSlot && provider && (
+        <ProviderAssignmentModal
+          provider={provider}
+          date={selectedSlot.date}
+          timeBlock={selectedSlot.timeBlock}
+          assignments={assignments.filter(a =>
+            a.date === selectedSlot.date &&
+            (a.time_block === selectedSlot.timeBlock || a.time_block === 'BOTH')
+          )}
+          services={services}
+          onClose={() => setSelectedSlot(null)}
+          onAssignmentChange={() => {
+            fetchAssignments();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -380,9 +471,11 @@ export default function ProviderProfilePage() {
 function WeeklySchedule({
   assignments,
   currentDate,
+  onCellClick,
 }: {
   assignments: AssignmentWithService[];
   currentDate: Date;
+  onCellClick?: (date: string, timeBlock: 'AM' | 'PM') => void;
 }) {
   const weekStart = getStartOfWeek(currentDate);
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -494,11 +587,12 @@ function WeeklySchedule({
                 return (
                   <td
                     key={date}
-                    className="p-3 text-center text-sm border"
+                    className={`p-3 text-center text-sm border ${onCellClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
                     style={{
                       ...style,
                       borderColor: colors.border,
                     }}
+                    onClick={() => onCellClick?.(date, block as 'AM' | 'PM')}
                   >
                     {services.length > 0 ? (
                       <span className="font-medium">

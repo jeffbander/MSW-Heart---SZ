@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { isHoliday } from '@/lib/holidays';
 
 export async function GET(request: Request) {
   try {
@@ -24,6 +25,8 @@ export async function GET(request: Request) {
         return await getRoomUtilizationReport(startDate, endDate);
       case 'pto-summary':
         return await getPTOSummaryReport(startDate, endDate);
+      case 'rooms-open-monthly':
+        return await getRoomsOpenMonthlyReport(startDate, endDate);
       default:
         return await getGeneralStatsReport(startDate, endDate);
     }
@@ -121,11 +124,17 @@ async function getRoomUtilizationReport(startDate: string, endDate: string) {
   data?.forEach((assignment: any) => {
     const key = `${assignment.date}-${assignment.time_block}`;
     if (!utilizationMap.has(key)) {
+      // Calculate maxRooms based on day of week (Wed/Thu PM = 15, others = 14)
+      const dayOfWeek = new Date(assignment.date + 'T00:00:00').getDay();
+      const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && assignment.time_block === 'PM';
+      const maxRooms = isExtendedDay ? 15 : 14;
+
       utilizationMap.set(key, {
         date: assignment.date,
         timeBlock: assignment.time_block,
         totalRooms: 0,
-        maxRooms: 14,
+        maxRooms,
+        unusedRooms: 0,
         providers: []
       });
     }
@@ -135,6 +144,11 @@ async function getRoomUtilizationReport(startDate: string, endDate: string) {
       initials: assignment.provider?.initials,
       rooms: assignment.room_count
     });
+  });
+
+  // Calculate unusedRooms for each entry
+  utilizationMap.forEach((entry) => {
+    entry.unusedRooms = Math.max(0, entry.maxRooms - entry.totalRooms);
   });
 
   return NextResponse.json({
@@ -204,5 +218,85 @@ async function getGeneralStatsReport(startDate: string, endDate: string) {
       totalProviders: providers?.length || 0,
       totalServices: services?.length || 0
     }
+  });
+}
+
+async function getRoomsOpenMonthlyReport(startDate: string, endDate: string) {
+  // Get all room assignments for the date range
+  const { data, error } = await supabase
+    .from('schedule_assignments')
+    .select('date, time_block, room_count')
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .gt('room_count', 0);
+
+  if (error) throw error;
+
+  // Build a map of date+timeBlock -> total rooms filled
+  const filledMap = new Map<string, number>();
+  data?.forEach((assignment: any) => {
+    const key = `${assignment.date}-${assignment.time_block}`;
+    filledMap.set(key, (filledMap.get(key) || 0) + assignment.room_count);
+  });
+
+  // Generate all weekdays in the range and calculate open rooms
+  const openSlots: { date: string; dayName: string; timeBlock: string; openRooms: number }[] = [];
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  const current = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+
+  while (current <= end) {
+    const dayOfWeek = current.getDay();
+    const dateStr = current.toISOString().split('T')[0];
+
+    // Skip weekends and holidays
+    if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isHoliday(dateStr)) {
+      const dayName = dayNames[dayOfWeek];
+      const month = current.getMonth() + 1;
+      const day = current.getDate();
+      const formattedDate = `${month}/${day}`;
+
+      // Check AM
+      const amKey = `${dateStr}-AM`;
+      const amFilled = filledMap.get(amKey) || 0;
+      const amTarget = 14;
+      const amOpen = Math.max(0, amTarget - amFilled);
+      if (amOpen > 0) {
+        openSlots.push({
+          date: dateStr,
+          dayName: `${dayName} ${formattedDate}`,
+          timeBlock: 'AM',
+          openRooms: amOpen
+        });
+      }
+
+      // Check PM (Wed/Thu have 15 target, others 14)
+      const isExtendedDay = dayOfWeek === 3 || dayOfWeek === 4;
+      const pmKey = `${dateStr}-PM`;
+      const pmFilled = filledMap.get(pmKey) || 0;
+      const pmTarget = isExtendedDay ? 15 : 14;
+      const pmOpen = Math.max(0, pmTarget - pmFilled);
+      if (pmOpen > 0) {
+        openSlots.push({
+          date: dateStr,
+          dayName: `${dayName} ${formattedDate}`,
+          timeBlock: 'PM',
+          openRooms: pmOpen
+        });
+      }
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  // Calculate total
+  const totalOpenRooms = openSlots.reduce((sum, slot) => sum + slot.openRooms, 0);
+
+  return NextResponse.json({
+    type: 'rooms-open-monthly',
+    dateRange: { startDate, endDate },
+    data: openSlots,
+    totalOpenRooms
   });
 }
