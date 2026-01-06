@@ -1233,6 +1233,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             services={services}
             providers={providers}
             assignments={assignments}
+            providerLeaves={providerLeaves}
             dateRange={dateRange}
             timeFrame={timeFrame}
             getAssignmentsForCell={getAssignmentsForCell}
@@ -1682,6 +1683,7 @@ interface ServiceViewProps {
   services: Service[];
   providers: Provider[];
   assignments: ScheduleAssignment[];
+  providerLeaves: ProviderLeave[];
   dateRange: string[];
   timeFrame: TimeFrame;
   getAssignmentsForCell: (serviceId: string, date: string, timeBlock: string) => ScheduleAssignment[];
@@ -1725,6 +1727,7 @@ interface ServiceRowConfig {
 function ServiceView({
   services,
   providers,
+  providerLeaves,
   dateRange,
   timeFrame,
   getAssignmentsForCell,
@@ -2112,6 +2115,18 @@ function ServiceView({
       bgStyle = '#FFEDD5'; // Light orange - needs coverage
     }
 
+    // For PTO row: also get approved PTO leaves from providerLeaves
+    const approvedPTOLeaves = isPTO ? providerLeaves.filter((leave: ProviderLeave) =>
+      date >= leave.start_date && date <= leave.end_date
+    ) : [];
+    // Get provider IDs already in cellAssignments to avoid duplicates
+    const assignedProviderIds = new Set(cellAssignments.map(a => a.provider_id));
+    // Filter to leaves not already shown via assignments
+    const additionalPTOLeaves = approvedPTOLeaves.filter((leave: ProviderLeave) => !assignedProviderIds.has(leave.provider_id));
+
+    // Check if there's anything to show in PTO row (assignments OR approved leaves)
+    const hasPTOContent = isPTO && (cellAssignments.length > 0 || additionalPTOLeaves.length > 0);
+
     return (
       <td
         key={date}
@@ -2119,7 +2134,7 @@ function ServiceView({
         style={{ borderColor: colors.border, backgroundColor: bgStyle }}
         onClick={() => handleCellClick(row.serviceId!, date, row.timeBlock!)}
       >
-        {cellAssignments.length > 0 ? (
+        {(cellAssignments.length > 0 || (isPTO && additionalPTOLeaves.length > 0)) ? (
           <div className="text-xs font-medium">
             {cellAssignments.map((a, idx) => {
               const providerPTO = a.provider?.id ? getProviderPTOForDate(a.provider.id, date) : [];
@@ -2190,6 +2205,23 @@ function ServiceView({
                   >
                     {a.provider?.initials}
                     {hasActiveConflicts && <span style={{ color: colors.ptoRed }}>*</span>}
+                  </span>
+                </span>
+              );
+            })}
+            {/* Render approved PTO leaves (from provider_leaves table) */}
+            {isPTO && additionalPTOLeaves.map((leave: ProviderLeave, idx: number) => {
+              const provider = providers.find(p => p.id === leave.provider_id);
+              if (!provider) return null;
+              const displayIdx = cellAssignments.length + idx;
+              return (
+                <span key={`leave-${leave.id}`}>
+                  {displayIdx > 0 && ', '}
+                  <span
+                    style={{ color: colors.ptoRed }}
+                    title="Approved PTO"
+                  >
+                    {provider.initials}
                   </span>
                 </span>
               );
