@@ -2119,9 +2119,11 @@ function ServiceView({
       bgStyle = '#FFEDD5'; // Light orange - needs coverage
     }
 
-    // For PTO row: also get approved PTO leaves from providerLeaves
+    // For PTO row: also get approved PTO leaves from providerLeaves (excluding maternity)
     const approvedPTOLeaves = isPTO ? providerLeaves.filter((leave: ProviderLeave) =>
-      date >= leave.start_date && date <= leave.end_date
+      date >= leave.start_date &&
+      date <= leave.end_date &&
+      leave.leave_type !== 'maternity'
     ) : [];
     // Get provider IDs already in cellAssignments to avoid duplicates
     const assignedProviderIds = new Set(cellAssignments.map(a => a.provider_id));
