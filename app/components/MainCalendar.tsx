@@ -782,14 +782,18 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
 
       if (response.ok) {
         await fetchData();
+        // Only clear state and close modal on success
+        setAvailabilityWarnings([]);
+        setPendingAssignment(null);
+        setSelectedCell(null);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        alert(errorData.error || 'Failed to assign provider. Please try again.');
       }
     } catch (error) {
       console.error('Error assigning provider:', error);
+      alert('Failed to assign provider. Please try again.');
     }
-
-    setAvailabilityWarnings([]);
-    setPendingAssignment(null);
-    setSelectedCell(null);
   };
 
   const handleRemoveAssignment = async (assignmentId: string) => {
@@ -2211,8 +2215,8 @@ function ServiceView({
             })}
             {/* Render approved PTO leaves (from provider_leaves table) */}
             {isPTO && additionalPTOLeaves.map((leave: ProviderLeave, idx: number) => {
-              const provider = providers.find(p => p.id === leave.provider_id);
-              if (!provider) return null;
+              // Use nested provider data from API response instead of looking it up
+              if (!leave.provider?.initials) return null;
               const displayIdx = cellAssignments.length + idx;
               return (
                 <span key={`leave-${leave.id}`}>
@@ -2221,7 +2225,7 @@ function ServiceView({
                     style={{ color: colors.ptoRed }}
                     title="Approved PTO"
                   >
-                    {provider.initials}
+                    {leave.provider.initials}
                   </span>
                 </span>
               );
