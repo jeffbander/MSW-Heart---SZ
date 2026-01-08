@@ -617,6 +617,9 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     date: string,
     timeBlock: string
   ) => {
+    // Only allow editing in admin mode
+    if (!isAdmin) return;
+
     // Check if date is a holiday
     const holiday = holidays.get(date);
     if (holiday) {
@@ -1257,7 +1260,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             onPTOConflictClick={handlePTOConflictClick}
             hasFellowsInRooms={hasFellowsInRooms}
             handleToggleCovering={handleToggleCovering}
-            onEditAssignment={setEditingAssignment}
+            onEditAssignment={isAdmin ? setEditingAssignment : () => {}}
             getMetadataForCell={getMetadataForCell}
             onOpenMetadataModal={(date, timeBlock) => setMetadataModalData({ date, timeBlock })}
           />
