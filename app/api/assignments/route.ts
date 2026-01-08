@@ -124,9 +124,12 @@ export async function POST(request: Request) {
       }
     }
 
+    // Remove force_override from body before inserting (not a DB column)
+    const { force_override, ...insertData } = body;
+
     const { data, error } = await supabase
       .from('schedule_assignments')
-      .insert(body)
+      .insert(insertData)
       .select(`
         id,
         date,
