@@ -2119,8 +2119,8 @@ function ServiceView({
       bgStyle = '#FFEDD5'; // Light orange - needs coverage
     }
 
-    // For PTO row: also get approved PTO leaves from providerLeaves (excluding maternity)
-    const approvedPTOLeaves = isPTO ? providerLeaves.filter((leave: ProviderLeave) =>
+    // For PTO row: also get approved PTO leaves from providerLeaves (excluding maternity and weekends)
+    const approvedPTOLeaves = (isPTO && !isWeekend) ? providerLeaves.filter((leave: ProviderLeave) =>
       date >= leave.start_date &&
       date <= leave.end_date &&
       leave.leave_type !== 'maternity'
