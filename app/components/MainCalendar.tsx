@@ -11,6 +11,7 @@ import AvailabilityWarningModal from './AvailabilityWarningModal';
 import PTOConflictModal from './PTOConflictModal';
 import EditAssignmentModal from './calendar/EditAssignmentModal';
 import DayMetadataModal from './DayMetadataModal';
+import BulkScheduleModal from './calendar/BulkScheduleModal';
 
 // Mount Sinai Colors
 const colors = {
@@ -96,6 +97,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
   const [showApplyTemplateModal, setShowApplyTemplateModal] = useState(false);
   const [showAlternatingModal, setShowAlternatingModal] = useState(false);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [showBulkScheduleModal, setShowBulkScheduleModal] = useState(false);
 
   // Provider search in assignment modal
   const [providerSearchQuery, setProviderSearchQuery] = useState('');
@@ -1090,6 +1092,18 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             </div>
           )}
 
+          {/* Bulk Schedule Button (Admin only) */}
+          {isAdmin && (
+            <button
+              onClick={() => setShowBulkScheduleModal(true)}
+              className="px-3 py-2 rounded text-sm font-medium border hover:bg-gray-50 transition-colors"
+              style={{ borderColor: colors.border, color: colors.primaryBlue }}
+              title="Add or remove a provider from recurring schedule"
+            >
+              Bulk Schedule
+            </button>
+          )}
+
           {/* Sandbox Mode Toggle (Admin only) */}
           {isAdmin && (
             <div className="flex items-center gap-2">
@@ -1608,6 +1622,18 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             }}
             weekStartDate={dateRange[0]}
           />
+
+          {showBulkScheduleModal && (
+            <BulkScheduleModal
+              providers={providers}
+              services={services}
+              onClose={() => setShowBulkScheduleModal(false)}
+              onSuccess={() => {
+                setShowBulkScheduleModal(false);
+                fetchData();
+              }}
+            />
+          )}
         </>
       )}
 
