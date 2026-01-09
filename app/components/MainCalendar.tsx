@@ -2299,10 +2299,10 @@ function ServiceView({
     return (
       <div className="bg-white rounded-lg shadow overflow-auto">
         <table className="min-w-full border-collapse">
-          <thead>
+          <thead className="sticky top-0 z-30">
             <tr>
               <th
-                className="sticky left-0 z-20 border px-3 py-3 text-left font-semibold text-sm"
+                className="sticky left-0 z-40 border px-3 py-3 text-left font-semibold text-sm"
                 style={{
                   backgroundColor: colors.lightGray,
                   borderColor: colors.border,
@@ -2560,10 +2560,10 @@ function ServiceView({
     return (
       <div className="bg-white rounded-lg shadow overflow-auto">
         <table className="min-w-full border-collapse">
-          <thead>
+          <thead className="sticky top-0 z-30">
             <tr>
               <th
-                className="sticky left-0 z-20 border px-3 py-3 text-left font-semibold text-sm"
+                className="sticky left-0 z-40 border px-3 py-3 text-left font-semibold text-sm"
                 style={{
                   backgroundColor: colors.lightGray,
                   borderColor: colors.border,
