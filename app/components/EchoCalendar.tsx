@@ -208,12 +208,12 @@ export default function EchoCalendar({
   };
 
   return (
-    <div className="overflow-x-auto">
+    <div>
       <table className="w-full border-collapse text-sm">
-        <thead className="sticky top-0 z-20 bg-white">
+        <thead className="sticky top-0 z-30">
           <tr>
             <th
-              className="border p-2 text-left font-medium"
+              className="sticky left-0 z-40 border p-2 text-left font-medium"
               style={{ backgroundColor: colors.primaryBlue, color: 'white', minWidth: '180px' }}
             >
               Location
@@ -235,7 +235,7 @@ export default function EchoCalendar({
           </tr>
           <tr>
             <th
-              className="border p-1 text-left text-xs"
+              className="sticky left-0 z-40 border p-1 text-left text-xs"
               style={{ backgroundColor: colors.lightGray }}
             >
             </th>
@@ -262,7 +262,7 @@ export default function EchoCalendar({
         <tbody>
           {/* PTO Row */}
           <tr className="bg-red-50">
-            <td className="border p-2 font-medium" style={{ color: colors.warningRed }}>
+            <td className="sticky left-0 z-10 border p-2 font-medium bg-red-50" style={{ color: colors.warningRed }}>
               PTO
             </td>
             {dateRange.map(date => (
@@ -317,7 +317,7 @@ export default function EchoCalendar({
           {/* Capacity Rows */}
           {['vascular', 'echo', 'stress_echo'].map(capacityType => (
             <tr key={capacityType} className="bg-blue-50">
-              <td className="border p-2 pl-6 text-sm">
+              <td className="sticky left-0 z-10 border p-2 pl-6 text-sm bg-blue-50">
                 {capacityType === 'vascular' ? 'Vascular' :
                  capacityType === 'echo' ? 'Echo' : 'Stress Echo'}
               </td>
@@ -351,7 +351,7 @@ export default function EchoCalendar({
               {/* Room Rows */}
               {rooms.map(room => (
                 <tr key={room.id} className="hover:bg-gray-50">
-                  <td className="border p-2 pl-4">
+                  <td className="sticky left-0 z-10 bg-white border p-2 pl-4">
                     <div className="font-medium text-sm">{room.short_name || room.name}</div>
                     {room.short_name && (
                       <div className="text-xs text-gray-500">{room.name}</div>

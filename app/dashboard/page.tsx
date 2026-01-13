@@ -48,7 +48,6 @@ const navCards: NavCard[] = [
     description: 'View the Echo lab schedule',
     href: '/echo',
     color: '#7C3AED',
-    comingSoon: true,
   },
   {
     id: 'data',

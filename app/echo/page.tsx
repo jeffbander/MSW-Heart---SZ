@@ -259,7 +259,7 @@ export default function EchoPage() {
         </div>
 
         {/* Calendar */}
-        <div className="bg-white rounded-lg shadow-sm p-4 overflow-x-auto">
+        <div className="bg-white rounded-lg shadow-sm p-4 overflow-auto max-h-[calc(100vh-280px)]">
           {loading ? (
             <div className="text-center py-8 text-gray-500">Loading schedule...</div>
           ) : (

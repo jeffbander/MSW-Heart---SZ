@@ -2323,7 +2323,7 @@ function ServiceView({
     const date = dateRange[0];
 
     return (
-      <div className="bg-white rounded-lg shadow overflow-auto">
+      <div className="bg-white rounded-lg shadow overflow-auto max-h-[calc(100vh-200px)]">
         <table className="min-w-full border-collapse">
           <thead className="sticky top-0 z-30">
             <tr>
@@ -2584,7 +2584,7 @@ function ServiceView({
   if (timeFrame === 'week') {
     // Week View: Days as columns, services grouped with AM/PM as separate rows
     return (
-      <div className="bg-white rounded-lg shadow overflow-auto">
+      <div className="bg-white rounded-lg shadow overflow-auto max-h-[calc(100vh-200px)]">
         <table className="min-w-full border-collapse">
           <thead className="sticky top-0 z-30">
             <tr>
