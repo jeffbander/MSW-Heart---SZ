@@ -295,3 +295,61 @@ export interface ProviderLeave {
   created_at: string;
   provider?: Provider;
 }
+
+// ============================================
+// ECHO LAB SCHEDULE TYPES
+// ============================================
+
+export interface EchoTech {
+  id: string;
+  name: string;
+  initials: string;
+  capacity_per_half_day: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface EchoRoom {
+  id: string;
+  category: 'CVI' | 'Fourth Floor Lab';
+  name: string;
+  short_name: string | null;
+  capacity_type: 'vascular' | 'echo' | 'stress_echo' | null;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface EchoScheduleAssignment {
+  id: string;
+  date: string;
+  echo_room_id: string;
+  echo_tech_id: string;
+  time_block: 'AM' | 'PM';
+  notes: string | null;
+  created_at: string;
+  echo_room?: EchoRoom;
+  echo_tech?: EchoTech;
+}
+
+export interface EchoPTO {
+  id: string;
+  date: string;
+  echo_tech_id: string;
+  time_block: 'AM' | 'PM' | 'BOTH';
+  reason: string | null;
+  created_at: string;
+  echo_tech?: EchoTech;
+}
+
+// Echo Schedule Conflict Types
+export type EchoConflictType = 'double_booked' | 'pto_conflict' | 'unassigned';
+
+export interface EchoConflict {
+  type: EchoConflictType;
+  date: string;
+  time_block: 'AM' | 'PM';
+  echo_tech_id?: string;
+  echo_room_id?: string;
+  message: string;
+}
