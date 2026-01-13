@@ -25,7 +25,7 @@ const defaultTabs: NavItem[] = [
   { id: 'schedule', label: 'Schedule', href: '/' },
   { id: 'pto', label: 'Submit PTO', href: '/pto' },
   { id: 'statistics', label: 'Statistics', href: '/statistics', comingSoon: true },
-  { id: 'echo', label: 'Echo', href: '/echo', comingSoon: true },
+  { id: 'echo', label: 'Echo', href: '/echo' },
   { id: 'data', label: 'Data', href: '/data', comingSoon: true },
 ];
 
