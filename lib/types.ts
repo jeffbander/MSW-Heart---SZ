@@ -353,3 +353,27 @@ export interface EchoConflict {
   echo_room_id?: string;
   message: string;
 }
+
+// Echo Schedule Template Types
+export interface EchoScheduleTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  assignments?: EchoTemplateAssignment[];
+}
+
+export interface EchoTemplateAssignment {
+  id: string;
+  template_id: string;
+  day_of_week: number; // 0=Sunday, 6=Saturday
+  echo_room_id: string;
+  echo_tech_id: string;
+  time_block: 'AM' | 'PM';
+  notes: string | null;
+  created_at: string;
+  echo_room?: EchoRoom;
+  echo_tech?: EchoTech;
+}

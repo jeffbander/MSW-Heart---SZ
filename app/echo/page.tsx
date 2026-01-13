@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO } from '@/lib/types';
+import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTemplate } from '@/lib/types';
 import EchoCalendar from '@/app/components/EchoCalendar';
 import EchoAssignmentModal from '@/app/components/EchoAssignmentModal';
 
@@ -32,6 +32,12 @@ export default function EchoPage() {
   const [selectedTimeBlock, setSelectedTimeBlock] = useState<'AM' | 'PM'>('AM');
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   const [showPTOModal, setShowPTOModal] = useState(false);
+
+  // Template state
+  const [templates, setTemplates] = useState<EchoScheduleTemplate[]>([]);
+  const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [showApplyTemplateModal, setShowApplyTemplateModal] = useState(false);
 
   // Calculate date range for current week
   const dateRange = useMemo(() => {
@@ -77,6 +83,22 @@ export default function EchoPage() {
   useEffect(() => {
     fetchData();
   }, [weekStartDate, weekEndDate]);
+
+  // Fetch templates
+  const fetchTemplates = async () => {
+    try {
+      const res = await fetch('/api/echo-templates');
+      if (res.ok) setTemplates(await res.json());
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchTemplates();
+    }
+  }, [isAdmin]);
 
   // Format week label
   const formatWeekLabel = () => {
@@ -179,6 +201,52 @@ export default function EchoPage() {
     }
   };
 
+  // Save current week as template
+  const handleSaveAsTemplate = async (name: string, description: string) => {
+    const response = await fetch('/api/echo-templates/from-week', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        description: description || undefined,
+        weekStartDate: weekStartDate
+      })
+    });
+
+    if (response.ok) {
+      await fetchTemplates();
+      setShowSaveTemplateModal(false);
+      alert('Template saved successfully!');
+    } else {
+      const error = await response.json();
+      alert(error.error || 'Failed to save template');
+    }
+  };
+
+  // Apply template to date range
+  const handleApplyTemplate = async (templateId: string, startDate: string, endDate: string, fillEmptyOnly: boolean) => {
+    const response = await fetch('/api/echo-templates/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        templateId,
+        startDate,
+        endDate,
+        fillEmptyOnly
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      await fetchData();
+      setShowApplyTemplateModal(false);
+      alert(result.message);
+    } else {
+      const error = await response.json();
+      alert(error.error || 'Failed to apply template');
+    }
+  };
+
   return (
     <div className="min-h-screen p-4" style={{ backgroundColor: colors.lightGray }}>
       <div className="max-w-full mx-auto">
@@ -210,13 +278,64 @@ export default function EchoPage() {
             </label>
 
             {isAdmin && (
-              <Link
-                href="/admin/echo"
-                className="px-3 py-1 rounded text-sm font-medium text-white"
-                style={{ backgroundColor: colors.primaryBlue }}
-              >
-                Manage Techs/Rooms
-              </Link>
+              <>
+                {/* Templates Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
+                    className="px-3 py-1 rounded text-sm font-medium text-white flex items-center gap-1"
+                    style={{ backgroundColor: colors.teal }}
+                  >
+                    Templates
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {showTemplateDropdown && (
+                    <div
+                      className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border z-50"
+                      style={{ borderColor: colors.border }}
+                    >
+                      <button
+                        onClick={() => {
+                          setShowSaveTemplateModal(true);
+                          setShowTemplateDropdown(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 rounded-t-lg"
+                      >
+                        Save Current Week as Template
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowApplyTemplateModal(true);
+                          setShowTemplateDropdown(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50"
+                      >
+                        Apply Template to Date Range
+                      </button>
+                      <div className="border-t" style={{ borderColor: colors.border }}>
+                        <Link
+                          href="/admin/echo/templates"
+                          className="block w-full px-4 py-2 text-left text-sm hover:bg-gray-50 rounded-b-lg"
+                          style={{ color: colors.primaryBlue }}
+                        >
+                          Manage Templates →
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <Link
+                  href="/admin/echo"
+                  className="px-3 py-1 rounded text-sm font-medium text-white"
+                  style={{ backgroundColor: colors.primaryBlue }}
+                >
+                  Manage Techs/Rooms
+                </Link>
+              </>
             )}
           </div>
         </div>
@@ -335,6 +454,65 @@ export default function EchoPage() {
           </div>
         </div>
       )}
+
+      {/* Save Template Modal */}
+      {showSaveTemplateModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setShowSaveTemplateModal(false)}
+        >
+          <div
+            className="bg-white rounded-lg p-6 max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold mb-4" style={{ color: colors.primaryBlue }}>
+              Save Week as Template
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              This will capture the current week&apos;s assignments ({formatWeekLabel()}) and save them as a reusable template.
+            </p>
+
+            <SaveTemplateForm
+              onSubmit={handleSaveAsTemplate}
+              onCancel={() => setShowSaveTemplateModal(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Apply Template Modal */}
+      {showApplyTemplateModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setShowApplyTemplateModal(false)}
+        >
+          <div
+            className="bg-white rounded-lg p-6 max-w-lg w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold mb-4" style={{ color: colors.primaryBlue }}>
+              Apply Template
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Apply a saved template to fill empty slots in a date range. Existing assignments will not be overwritten.
+            </p>
+
+            <ApplyTemplateForm
+              templates={templates}
+              onSubmit={handleApplyTemplate}
+              onCancel={() => setShowApplyTemplateModal(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Close dropdown when clicking outside */}
+      {showTemplateDropdown && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowTemplateDropdown(false)}
+        />
+      )}
     </div>
   );
 }
@@ -398,6 +576,170 @@ function PTOForm({
           style={{ backgroundColor: colors.teal }}
         >
           Add PTO
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Save Template Form Component
+function SaveTemplateForm({
+  onSubmit,
+  onCancel
+}: {
+  onSubmit: (name: string, description: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    await onSubmit(name.trim(), description.trim());
+    setSaving(false);
+  };
+
+  return (
+    <div>
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-2">Template Name *</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g., Standard Week, January Schedule"
+          className="w-full px-3 py-2 border rounded"
+        />
+      </div>
+
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-2">Description (optional)</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Add any notes about this template..."
+          rows={2}
+          className="w-full px-3 py-2 border rounded"
+        />
+      </div>
+
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 rounded border font-medium"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={!name.trim() || saving}
+          className="px-4 py-2 rounded text-white font-medium disabled:opacity-50"
+          style={{ backgroundColor: colors.teal }}
+        >
+          {saving ? 'Saving...' : 'Save Template'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Apply Template Form Component
+function ApplyTemplateForm({
+  templates,
+  onSubmit,
+  onCancel
+}: {
+  templates: EchoScheduleTemplate[];
+  onSubmit: (templateId: string, startDate: string, endDate: string, fillEmptyOnly: boolean) => void;
+  onCancel: () => void;
+}) {
+  const [templateId, setTemplateId] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [fillEmptyOnly, setFillEmptyOnly] = useState(true);
+  const [applying, setApplying] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!templateId || !startDate || !endDate) return;
+    setApplying(true);
+    await onSubmit(templateId, startDate, endDate, fillEmptyOnly);
+    setApplying(false);
+  };
+
+  return (
+    <div>
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-2">Select Template *</label>
+        <select
+          value={templateId}
+          onChange={(e) => setTemplateId(e.target.value)}
+          className="w-full px-3 py-2 border rounded"
+        >
+          <option value="">Choose a template...</option>
+          {templates.map(t => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+              {t.description && ` - ${t.description}`}
+            </option>
+          ))}
+        </select>
+        {templates.length === 0 && (
+          <p className="text-sm text-amber-600 mt-1">
+            No templates available. Save a week as a template first.
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className="block text-sm font-medium mb-2">Start Date *</label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-full px-3 py-2 border rounded"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-2">End Date *</label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            min={startDate}
+            className="w-full px-3 py-2 border rounded"
+          />
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={fillEmptyOnly}
+            onChange={(e) => setFillEmptyOnly(e.target.checked)}
+            className="w-4 h-4"
+          />
+          <span className="text-sm">Only fill empty slots (don&apos;t overwrite existing assignments)</span>
+        </label>
+      </div>
+
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 rounded border font-medium"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={!templateId || !startDate || !endDate || applying}
+          className="px-4 py-2 rounded text-white font-medium disabled:opacity-50"
+          style={{ backgroundColor: colors.primaryBlue }}
+        >
+          {applying ? 'Applying...' : 'Apply Template'}
         </button>
       </div>
     </div>
