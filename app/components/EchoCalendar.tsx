@@ -137,13 +137,13 @@ export default function EchoCalendar({
     );
   };
 
-  // Calculate capacity for a date/timeblock
+  // Calculate capacity for a date/timeblock (CVI rooms only)
   const calculateCapacity = (date: string, timeBlock: 'AM' | 'PM', capacityType: string) => {
     let total = 0;
     const countedTechs = new Set<string>();
 
     echoRooms
-      .filter(room => room.capacity_type === capacityType)
+      .filter(room => room.capacity_type === capacityType && room.category === 'CVI')
       .forEach(room => {
         const roomAssignments = getAssignments(room.id, date, timeBlock);
         roomAssignments.forEach(assignment => {
