@@ -357,7 +357,7 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
     .eq('enforcement', 'hard');
 
   // Services that block room assignments
-  const blockingServices = ['Consults', 'Burgundy', 'Echo Lab', 'Nuclear'];
+  const blockingServices = ['Consults', 'Burgundy', 'Echo Lab', 'Nuclear', '4th Floor', 'Fourth Floor'];
 
   // Build map of room counts per slot
   const roomCountMap = new Map<string, number>();
