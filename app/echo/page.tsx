@@ -14,7 +14,7 @@ const colors = {
   border: '#E5E7EB',
 };
 
-// Capacity Summary Component
+// Capacity Summary Component - Shows daily capacity for each day
 function CapacitySummary({
   dateRange,
   echoTechs,
@@ -28,61 +28,108 @@ function CapacitySummary({
 }) {
   const techMap = new Map(echoTechs.map(t => [t.id, t]));
 
-  // Calculate full-day capacity (AM + PM) for a capacity type
-  const calculateDayCapacity = (capacityType: string) => {
+  // Calculate full-day capacity (AM + PM) for a specific date and capacity type
+  const calculateDayCapacity = (date: string, capacityType: string) => {
     let total = 0;
     const countedTechs = new Set<string>();
 
-    // Only count weekdays and CVI rooms
-    dateRange.forEach(date => {
-      const dayOfWeek = new Date(date + 'T00:00:00').getDay();
-      if (dayOfWeek === 0 || dayOfWeek === 6) return; // Skip weekends
-
-      ['AM', 'PM'].forEach(timeBlock => {
-        echoRooms
-          .filter(room => room.capacity_type === capacityType && room.category === 'CVI')
-          .forEach(room => {
-            const roomAssignments = assignments.filter(
-              a => a.echo_room_id === room.id && a.date === date && a.time_block === timeBlock
-            );
-            roomAssignments.forEach(assignment => {
-              const key = `${date}-${timeBlock}-${assignment.echo_tech_id}`;
-              if (!countedTechs.has(key)) {
-                const tech = techMap.get(assignment.echo_tech_id);
-                if (tech) {
-                  total += tech.capacity_per_half_day;
-                  countedTechs.add(key);
-                }
+    ['AM', 'PM'].forEach(timeBlock => {
+      echoRooms
+        .filter(room => room.capacity_type === capacityType && room.category === 'CVI')
+        .forEach(room => {
+          const roomAssignments = assignments.filter(
+            a => a.echo_room_id === room.id && a.date === date && a.time_block === timeBlock
+          );
+          roomAssignments.forEach(assignment => {
+            const key = `${timeBlock}-${assignment.echo_tech_id}`;
+            if (!countedTechs.has(key)) {
+              const tech = techMap.get(assignment.echo_tech_id);
+              if (tech) {
+                total += tech.capacity_per_half_day;
+                countedTechs.add(key);
               }
-            });
+            }
           });
-      });
+        });
     });
 
     return total;
   };
 
-  const echoCapacity = calculateDayCapacity('echo');
-  const stressEchoCapacity = calculateDayCapacity('stress_echo');
-  const vascularCapacity = calculateDayCapacity('vascular');
+  const formatDateHeader = (dateStr: string) => {
+    const date = new Date(dateStr + 'T00:00:00');
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    return { dayName: days[date.getDay()], dateStr: `${month}/${day}` };
+  };
+
+  const isWeekend = (dateStr: string) => {
+    const date = new Date(dateStr + 'T00:00:00');
+    return date.getDay() === 0 || date.getDay() === 6;
+  };
 
   return (
-    <div className="grid grid-cols-3 gap-4 mb-4">
-      <div className="bg-white rounded-lg shadow-sm p-4 border-l-4" style={{ borderLeftColor: colors.teal }}>
-        <div className="text-sm text-gray-500 font-medium">Echo Capacity</div>
-        <div className="text-3xl font-bold" style={{ color: colors.primaryBlue }}>{echoCapacity}</div>
-        <div className="text-xs text-gray-400">Full week total</div>
-      </div>
-      <div className="bg-white rounded-lg shadow-sm p-4 border-l-4" style={{ borderLeftColor: colors.lightBlue }}>
-        <div className="text-sm text-gray-500 font-medium">Stress Echo Capacity</div>
-        <div className="text-3xl font-bold" style={{ color: colors.primaryBlue }}>{stressEchoCapacity}</div>
-        <div className="text-xs text-gray-400">Full week total</div>
-      </div>
-      <div className="bg-white rounded-lg shadow-sm p-4 border-l-4" style={{ borderLeftColor: colors.primaryBlue }}>
-        <div className="text-sm text-gray-500 font-medium">Vascular Capacity</div>
-        <div className="text-3xl font-bold" style={{ color: colors.primaryBlue }}>{vascularCapacity}</div>
-        <div className="text-xs text-gray-400">Full week total</div>
-      </div>
+    <div className="bg-white rounded-lg shadow-sm p-4 mb-4 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr>
+            <th className="text-left p-2 font-medium text-gray-600" style={{ minWidth: '100px' }}>Capacity</th>
+            {dateRange.map(date => {
+              const { dayName, dateStr } = formatDateHeader(date);
+              const weekend = isWeekend(date);
+              return (
+                <th
+                  key={date}
+                  className={`text-center p-2 font-medium ${weekend ? 'text-gray-400' : ''}`}
+                  style={{ minWidth: '70px' }}
+                >
+                  <div>{dayName}</div>
+                  <div className="text-xs font-normal">{dateStr}</div>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="p-2 font-medium" style={{ color: colors.teal }}>Echo</td>
+            {dateRange.map(date => {
+              const weekend = isWeekend(date);
+              const capacity = weekend ? '-' : calculateDayCapacity(date, 'echo');
+              return (
+                <td key={date} className={`text-center p-2 font-bold text-lg ${weekend ? 'text-gray-300' : ''}`} style={{ color: weekend ? undefined : colors.primaryBlue }}>
+                  {capacity}
+                </td>
+              );
+            })}
+          </tr>
+          <tr>
+            <td className="p-2 font-medium" style={{ color: colors.lightBlue }}>Stress Echo</td>
+            {dateRange.map(date => {
+              const weekend = isWeekend(date);
+              const capacity = weekend ? '-' : calculateDayCapacity(date, 'stress_echo');
+              return (
+                <td key={date} className={`text-center p-2 font-bold text-lg ${weekend ? 'text-gray-300' : ''}`} style={{ color: weekend ? undefined : colors.primaryBlue }}>
+                  {capacity}
+                </td>
+              );
+            })}
+          </tr>
+          <tr>
+            <td className="p-2 font-medium" style={{ color: colors.primaryBlue }}>Vascular</td>
+            {dateRange.map(date => {
+              const weekend = isWeekend(date);
+              const capacity = weekend ? '-' : calculateDayCapacity(date, 'vascular');
+              return (
+                <td key={date} className={`text-center p-2 font-bold text-lg ${weekend ? 'text-gray-300' : ''}`} style={{ color: weekend ? undefined : colors.primaryBlue }}>
+                  {capacity}
+                </td>
+              );
+            })}
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
