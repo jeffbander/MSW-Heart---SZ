@@ -14,6 +14,79 @@ const colors = {
   border: '#E5E7EB',
 };
 
+// Capacity Summary Component
+function CapacitySummary({
+  dateRange,
+  echoTechs,
+  echoRooms,
+  assignments
+}: {
+  dateRange: string[];
+  echoTechs: EchoTech[];
+  echoRooms: EchoRoom[];
+  assignments: EchoScheduleAssignment[];
+}) {
+  const techMap = new Map(echoTechs.map(t => [t.id, t]));
+
+  // Calculate full-day capacity (AM + PM) for a capacity type
+  const calculateDayCapacity = (capacityType: string) => {
+    let total = 0;
+    const countedTechs = new Set<string>();
+
+    // Only count weekdays and CVI rooms
+    dateRange.forEach(date => {
+      const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) return; // Skip weekends
+
+      ['AM', 'PM'].forEach(timeBlock => {
+        echoRooms
+          .filter(room => room.capacity_type === capacityType && room.category === 'CVI')
+          .forEach(room => {
+            const roomAssignments = assignments.filter(
+              a => a.echo_room_id === room.id && a.date === date && a.time_block === timeBlock
+            );
+            roomAssignments.forEach(assignment => {
+              const key = `${date}-${timeBlock}-${assignment.echo_tech_id}`;
+              if (!countedTechs.has(key)) {
+                const tech = techMap.get(assignment.echo_tech_id);
+                if (tech) {
+                  total += tech.capacity_per_half_day;
+                  countedTechs.add(key);
+                }
+              }
+            });
+          });
+      });
+    });
+
+    return total;
+  };
+
+  const echoCapacity = calculateDayCapacity('echo');
+  const stressEchoCapacity = calculateDayCapacity('stress_echo');
+  const vascularCapacity = calculateDayCapacity('vascular');
+
+  return (
+    <div className="grid grid-cols-3 gap-4 mb-4">
+      <div className="bg-white rounded-lg shadow-sm p-4 border-l-4" style={{ borderLeftColor: colors.teal }}>
+        <div className="text-sm text-gray-500 font-medium">Echo Capacity</div>
+        <div className="text-3xl font-bold" style={{ color: colors.primaryBlue }}>{echoCapacity}</div>
+        <div className="text-xs text-gray-400">Full week total</div>
+      </div>
+      <div className="bg-white rounded-lg shadow-sm p-4 border-l-4" style={{ borderLeftColor: colors.lightBlue }}>
+        <div className="text-sm text-gray-500 font-medium">Stress Echo Capacity</div>
+        <div className="text-3xl font-bold" style={{ color: colors.primaryBlue }}>{stressEchoCapacity}</div>
+        <div className="text-xs text-gray-400">Full week total</div>
+      </div>
+      <div className="bg-white rounded-lg shadow-sm p-4 border-l-4" style={{ borderLeftColor: colors.primaryBlue }}>
+        <div className="text-sm text-gray-500 font-medium">Vascular Capacity</div>
+        <div className="text-3xl font-bold" style={{ color: colors.primaryBlue }}>{vascularCapacity}</div>
+        <div className="text-xs text-gray-400">Full week total</div>
+      </div>
+    </div>
+  );
+}
+
 export default function EchoPage() {
   // Data state
   const [echoTechs, setEchoTechs] = useState<EchoTech[]>([]);
@@ -38,6 +111,28 @@ export default function EchoPage() {
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
   const [showApplyTemplateModal, setShowApplyTemplateModal] = useState(false);
+
+  // Collapsed sections state (Fourth Floor Lab hidden by default)
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('echo-collapsed-categories');
+      if (saved) return new Set(JSON.parse(saved));
+    }
+    return new Set(['Fourth Floor Lab']);
+  });
+
+  const toggleCategory = (category: string) => {
+    setCollapsedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      localStorage.setItem('echo-collapsed-categories', JSON.stringify([...next]));
+      return next;
+    });
+  };
 
   // Calculate date range for current week
   const dateRange = useMemo(() => {
@@ -377,8 +472,18 @@ export default function EchoPage() {
           </div>
         </div>
 
+        {/* Capacity Summary Cards */}
+        {!loading && (
+          <CapacitySummary
+            dateRange={dateRange}
+            echoTechs={echoTechs}
+            echoRooms={echoRooms}
+            assignments={assignments}
+          />
+        )}
+
         {/* Calendar */}
-        <div className="bg-white rounded-lg shadow-sm p-4 overflow-auto max-h-[calc(100vh-280px)]">
+        <div className="bg-white rounded-lg shadow-sm p-4 overflow-auto max-h-[calc(100vh-320px)]">
           {loading ? (
             <div className="text-center py-8 text-gray-500">Loading schedule...</div>
           ) : (
@@ -391,6 +496,8 @@ export default function EchoPage() {
               isAdmin={isAdmin}
               onCellClick={handleCellClick}
               onPTOClick={handlePTOClick}
+              collapsedCategories={collapsedCategories}
+              onToggleCategory={toggleCategory}
             />
           )}
         </div>

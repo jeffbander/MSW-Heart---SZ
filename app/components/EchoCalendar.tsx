@@ -12,6 +12,8 @@ interface EchoCalendarProps {
   isAdmin: boolean;
   onCellClick: (roomId: string, date: string, timeBlock: 'AM' | 'PM') => void;
   onPTOClick: (date: string, timeBlock: 'AM' | 'PM') => void;
+  collapsedCategories: Set<string>;
+  onToggleCategory: (category: string) => void;
 }
 
 const colors = {
@@ -33,7 +35,9 @@ export default function EchoCalendar({
   ptoDays,
   isAdmin,
   onCellClick,
-  onPTOClick
+  onPTOClick,
+  collapsedCategories,
+  onToggleCategory
 }: EchoCalendarProps) {
 
   // Group rooms by category
@@ -175,7 +179,7 @@ export default function EchoCalendar({
     return date.getDay() === 0 || date.getDay() === 6;
   };
 
-  // Render tech names for a cell
+  // Render tech names for a cell (notes shown on hover only)
   const renderCellContent = (roomId: string, date: string, timeBlock: 'AM' | 'PM') => {
     const cellAssignments = getAssignments(roomId, date, timeBlock);
 
@@ -191,17 +195,21 @@ export default function EchoCalendar({
     return cellAssignments.map((assignment, idx) => {
       const tech = techMap.get(assignment.echo_tech_id);
       const conflict = hasConflict(assignment.echo_tech_id, date, timeBlock);
+      const tooltipText = conflict
+        ? `Conflict: ${tech?.name}`
+        : assignment.notes
+          ? `${tech?.name}: ${assignment.notes}`
+          : tech?.name;
 
       return (
         <span
           key={assignment.id}
           className={conflict ? 'text-red-600 font-medium' : ''}
-          title={conflict ? 'Conflict detected' : (assignment.notes || tech?.name)}
+          title={tooltipText}
         >
           {idx > 0 && ', '}
           {conflict && '⚠️ '}
           {tech?.name || 'Unknown'}
-          {assignment.notes && <span className="text-gray-500 text-xs ml-1">{assignment.notes}</span>}
         </span>
       );
     });
@@ -303,82 +311,59 @@ export default function EchoCalendar({
             ))}
           </tr>
 
-          {/* Capacity Section Header */}
-          <tr>
-            <td
-              colSpan={dateRange.length * 2 + 1}
-              className="border p-2 font-bold"
-              style={{ backgroundColor: colors.categoryBg, color: colors.primaryBlue }}
-            >
-              CAPACITY
-            </td>
-          </tr>
-
-          {/* Capacity Rows */}
-          {['vascular', 'echo', 'stress_echo'].map(capacityType => (
-            <tr key={capacityType} className="bg-blue-50">
-              <td className="sticky left-0 z-10 border p-2 pl-6 text-sm bg-blue-50">
-                {capacityType === 'vascular' ? 'Vascular' :
-                 capacityType === 'echo' ? 'Echo' : 'Stress Echo'}
-              </td>
-              {dateRange.map(date => (
-                <>
-                  <td key={`${date}-AM-${capacityType}`} className="border p-1 text-center text-sm font-medium">
-                    {calculateCapacity(date, 'AM', capacityType)}
-                  </td>
-                  <td key={`${date}-PM-${capacityType}`} className="border p-1 text-center text-sm font-medium">
-                    {calculateCapacity(date, 'PM', capacityType)}
-                  </td>
-                </>
-              ))}
-            </tr>
-          ))}
-
           {/* Room Sections by Category */}
-          {Object.entries(roomsByCategory).map(([category, rooms]) => (
-            <>
-              {/* Category Header */}
-              <tr key={`header-${category}`}>
-                <td
-                  colSpan={dateRange.length * 2 + 1}
-                  className="border p-2 font-bold"
-                  style={{ backgroundColor: colors.categoryBg, color: colors.primaryBlue }}
-                >
-                  {category.toUpperCase()}
-                </td>
-              </tr>
-
-              {/* Room Rows */}
-              {rooms.map(room => (
-                <tr key={room.id} className="hover:bg-gray-50">
-                  <td className="sticky left-0 z-10 bg-white border p-2 pl-4">
-                    <div className="font-medium text-sm">{room.short_name || room.name}</div>
-                    {room.short_name && (
-                      <div className="text-xs text-gray-500">{room.name}</div>
-                    )}
+          {Object.entries(roomsByCategory).map(([category, rooms]) => {
+            const isCollapsed = collapsedCategories.has(category);
+            return (
+              <>
+                {/* Category Header - Clickable to expand/collapse */}
+                <tr key={`header-${category}`}>
+                  <td
+                    colSpan={dateRange.length * 2 + 1}
+                    className="border p-2 font-bold cursor-pointer hover:bg-gray-200 select-none"
+                    style={{ backgroundColor: colors.categoryBg, color: colors.primaryBlue }}
+                    onClick={() => onToggleCategory(category)}
+                  >
+                    <span className="mr-2">{isCollapsed ? '▶' : '▼'}</span>
+                    {category.toUpperCase()}
+                    <span className="text-sm font-normal text-gray-500 ml-2">
+                      ({rooms.length} rooms)
+                    </span>
                   </td>
-                  {dateRange.map(date => (
-                    <>
-                      <td
-                        key={`${room.id}-${date}-AM`}
-                        className={`border p-1 text-xs ${isAdmin ? 'cursor-pointer hover:bg-blue-50' : ''} ${isWeekend(date) ? 'bg-gray-50' : ''}`}
-                        onClick={() => isAdmin && onCellClick(room.id, date, 'AM')}
-                      >
-                        {renderCellContent(room.id, date, 'AM')}
-                      </td>
-                      <td
-                        key={`${room.id}-${date}-PM`}
-                        className={`border p-1 text-xs ${isAdmin ? 'cursor-pointer hover:bg-blue-50' : ''} ${isWeekend(date) ? 'bg-gray-50' : ''}`}
-                        onClick={() => isAdmin && onCellClick(room.id, date, 'PM')}
-                      >
-                        {renderCellContent(room.id, date, 'PM')}
-                      </td>
-                    </>
-                  ))}
                 </tr>
-              ))}
-            </>
-          ))}
+
+                {/* Room Rows - Only show if not collapsed */}
+                {!isCollapsed && rooms.map(room => (
+                  <tr key={room.id} className="hover:bg-gray-50">
+                    <td className="sticky left-0 z-10 bg-white border p-2 pl-4">
+                      <div className="font-medium text-sm">{room.short_name || room.name}</div>
+                      {room.short_name && (
+                        <div className="text-xs text-gray-500">{room.name}</div>
+                      )}
+                    </td>
+                    {dateRange.map(date => (
+                      <>
+                        <td
+                          key={`${room.id}-${date}-AM`}
+                          className={`border p-1 text-xs ${isAdmin ? 'cursor-pointer hover:bg-blue-50' : ''} ${isWeekend(date) ? 'bg-gray-50' : ''}`}
+                          onClick={() => isAdmin && onCellClick(room.id, date, 'AM')}
+                        >
+                          {renderCellContent(room.id, date, 'AM')}
+                        </td>
+                        <td
+                          key={`${room.id}-${date}-PM`}
+                          className={`border p-1 text-xs ${isAdmin ? 'cursor-pointer hover:bg-blue-50' : ''} ${isWeekend(date) ? 'bg-gray-50' : ''}`}
+                          onClick={() => isAdmin && onCellClick(room.id, date, 'PM')}
+                        >
+                          {renderCellContent(room.id, date, 'PM')}
+                        </td>
+                      </>
+                    ))}
+                  </tr>
+                ))}
+              </>
+            );
+          })}
         </tbody>
       </table>
     </div>
