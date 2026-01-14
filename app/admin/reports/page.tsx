@@ -393,8 +393,55 @@ export default function ReportsPage() {
           }
         });
 
+        // Download CSV function
+        const downloadCSV = () => {
+          const headers = ['Date', 'Day', 'Time', 'Current Rooms', 'Target', 'Available Providers'];
+          const rows = report.slots.map((slot: any) => [
+            slot.date,
+            slot.dayName.split(' ')[0], // Just the day name
+            slot.timeBlock,
+            slot.currentRooms,
+            slot.target,
+            `"${slot.availableProviders.map((p: any) => `${p.initials} (+${p.roomCount})`).join(', ')}"`
+          ]);
+
+          const csvContent = [
+            headers.join(','),
+            ...rows.map((row: any) => row.join(','))
+          ].join('\n');
+
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          const monthDate = new Date(report.dateRange.startDate + 'T00:00:00');
+          const monthName = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).replace(' ', '-');
+          link.download = `provider-availability-${monthName}.csv`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        };
+
         return (
           <div className="space-y-4">
+            {/* Header with Download Button */}
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold" style={{ color: colors.primaryBlue }}>
+                Provider Availability Report
+              </h3>
+              <button
+                onClick={downloadCSV}
+                className="px-4 py-2 rounded text-white font-medium flex items-center gap-2"
+                style={{ backgroundColor: colors.lightBlue }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download CSV
+              </button>
+            </div>
+
             {/* Summary Cards */}
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-white p-4 rounded-lg shadow">

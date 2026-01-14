@@ -328,7 +328,7 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
     .lte('date', endDate)
     .gt('room_count', 0);
 
-  // Fetch all assignments (to check for blocking services)
+  // Fetch all assignments (to check for blocking services and PTO)
   const { data: allAssignments } = await supabase
     .from('schedule_assignments')
     .select(`
@@ -340,6 +340,21 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
     `)
     .gte('date', startDate)
     .lte('date', endDate);
+
+  // Fetch provider leaves (maternity, vacation, medical, etc.)
+  const { data: leaves } = await supabase
+    .from('provider_leaves')
+    .select('provider_id, start_date, end_date')
+    .lte('start_date', endDate)
+    .gte('end_date', startDate)
+    .in('provider_id', providerIds);
+
+  // Fetch hard availability rules (blocks)
+  const { data: availabilityRules } = await supabase
+    .from('provider_availability_rules')
+    .select('provider_id, day_of_week, time_block, rule_type')
+    .in('provider_id', providerIds)
+    .eq('enforcement', 'hard');
 
   // Services that block room assignments
   const blockingServices = ['Consults', 'Burgundy', 'Echo Lab', 'Nuclear'];
@@ -365,8 +380,9 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
       providerAssignmentMap.set(key, new Set());
     }
 
-    // Track PTO
-    if (a.is_pto) {
+    // Track PTO (including service named 'PTO')
+    const serviceName = a.service?.name || '';
+    if (a.is_pto || serviceName === 'PTO') {
       if (!providerPTOMap.has(key)) {
         providerPTOMap.set(key, new Set());
       }
@@ -374,7 +390,6 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
     }
 
     // Track blocking services
-    const serviceName = a.service?.name || '';
     if (blockingServices.some(bs => serviceName.includes(bs))) {
       if (!providerBlockedMap.has(key)) {
         providerBlockedMap.set(key, new Set());
@@ -391,6 +406,40 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
     }
     providerAssignmentMap.get(key)!.add(a.provider_id);
   });
+
+  // Helper: Check if provider is on leave for a specific date
+  const isOnLeave = (providerId: string, dateStr: string): boolean => {
+    if (!leaves) return false;
+    return leaves.some((leave: any) =>
+      leave.provider_id === providerId &&
+      dateStr >= leave.start_date &&
+      dateStr <= leave.end_date
+    );
+  };
+
+  // Helper: Check if provider has hard availability block for day/time
+  const hasAvailabilityBlock = (providerId: string, dayOfWeek: number, timeBlock: string): boolean => {
+    if (!availabilityRules) return false;
+    return availabilityRules.some((rule: any) =>
+      rule.provider_id === providerId &&
+      rule.day_of_week === dayOfWeek &&
+      rule.rule_type === 'block' &&
+      (rule.time_block === timeBlock || rule.time_block === 'BOTH')
+    );
+  };
+
+  // Helper: Check if provider has PTO for a specific date/time (handles BOTH)
+  const hasPTO = (providerId: string, dateStr: string, timeBlock: string): boolean => {
+    // Check exact time block
+    const exactKey = `${dateStr}-${timeBlock}`;
+    if (providerPTOMap.get(exactKey)?.has(providerId)) return true;
+
+    // Check BOTH (full day PTO blocks both AM and PM)
+    const bothKey = `${dateStr}-BOTH`;
+    if (providerPTOMap.get(bothKey)?.has(providerId)) return true;
+
+    return false;
+  };
 
   // Generate slots
   const slots: {
@@ -428,15 +477,18 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
         // Only include slots that are understaffed (< 14)
         if (currentRooms < 14) {
           // Find available providers
-          const ptoSet = providerPTOMap.get(key) || new Set();
           const blockedSet = providerBlockedMap.get(key) || new Set();
           const assignedSet = providerAssignmentMap.get(key) || new Set();
 
           const availableProviders = providers
             .filter((p: any) => {
-              // Not on PTO
-              if (ptoSet.has(p.id)) return false;
-              // Not blocked by other service
+              // Not on PTO (handles BOTH time block)
+              if (hasPTO(p.id, dateStr, timeBlock)) return false;
+              // Not on leave (maternity, vacation, etc.)
+              if (isOnLeave(p.id, dateStr)) return false;
+              // Not blocked by hard availability rule
+              if (hasAvailabilityBlock(p.id, dayOfWeek, timeBlock)) return false;
+              // Not blocked by other service (Consults, Burgundy, etc.)
               if (blockedSet.has(p.id)) return false;
               // Not already assigned to rooms
               if (assignedSet.has(p.id)) return false;
