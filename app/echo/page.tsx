@@ -69,19 +69,21 @@ function CapacitySummary({
     return date.getDay() === 0 || date.getDay() === 6;
   };
 
+  // Filter out weekends
+  const weekdays = dateRange.filter(date => !isWeekend(date));
+
   return (
     <div className="bg-white rounded-lg shadow-sm p-4 mb-4 overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr>
             <th className="text-left p-2 font-medium text-gray-600" style={{ minWidth: '100px' }}>Capacity</th>
-            {dateRange.map(date => {
+            {weekdays.map(date => {
               const { dayName, dateStr } = formatDateHeader(date);
-              const weekend = isWeekend(date);
               return (
                 <th
                   key={date}
-                  className={`text-center p-2 font-medium ${weekend ? 'text-gray-400' : ''}`}
+                  className="text-center p-2 font-medium"
                   style={{ minWidth: '70px' }}
                 >
                   <div>{dayName}</div>
@@ -94,39 +96,27 @@ function CapacitySummary({
         <tbody>
           <tr>
             <td className="p-2 font-medium" style={{ color: colors.teal }}>Echo</td>
-            {dateRange.map(date => {
-              const weekend = isWeekend(date);
-              const capacity = weekend ? '-' : calculateDayCapacity(date, 'echo');
-              return (
-                <td key={date} className={`text-center p-2 font-bold text-lg ${weekend ? 'text-gray-300' : ''}`} style={{ color: weekend ? undefined : colors.primaryBlue }}>
-                  {capacity}
-                </td>
-              );
-            })}
+            {weekdays.map(date => (
+              <td key={date} className="text-center p-2 font-bold text-lg" style={{ color: colors.primaryBlue }}>
+                {calculateDayCapacity(date, 'echo')}
+              </td>
+            ))}
           </tr>
           <tr>
             <td className="p-2 font-medium" style={{ color: colors.lightBlue }}>Stress Echo</td>
-            {dateRange.map(date => {
-              const weekend = isWeekend(date);
-              const capacity = weekend ? '-' : calculateDayCapacity(date, 'stress_echo');
-              return (
-                <td key={date} className={`text-center p-2 font-bold text-lg ${weekend ? 'text-gray-300' : ''}`} style={{ color: weekend ? undefined : colors.primaryBlue }}>
-                  {capacity}
-                </td>
-              );
-            })}
+            {weekdays.map(date => (
+              <td key={date} className="text-center p-2 font-bold text-lg" style={{ color: colors.primaryBlue }}>
+                {calculateDayCapacity(date, 'stress_echo')}
+              </td>
+            ))}
           </tr>
           <tr>
             <td className="p-2 font-medium" style={{ color: colors.primaryBlue }}>Vascular</td>
-            {dateRange.map(date => {
-              const weekend = isWeekend(date);
-              const capacity = weekend ? '-' : calculateDayCapacity(date, 'vascular');
-              return (
-                <td key={date} className={`text-center p-2 font-bold text-lg ${weekend ? 'text-gray-300' : ''}`} style={{ color: weekend ? undefined : colors.primaryBlue }}>
-                  {capacity}
-                </td>
-              );
-            })}
+            {weekdays.map(date => (
+              <td key={date} className="text-center p-2 font-bold text-lg" style={{ color: colors.primaryBlue }}>
+                {calculateDayCapacity(date, 'vascular')}
+              </td>
+            ))}
           </tr>
         </tbody>
       </table>
