@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -9,10 +9,20 @@ const colors = {
   border: '#E5E7EB',
 };
 
-type ReportType = 'general-stats' | 'provider-workload' | 'service-coverage' | 'room-utilization' | 'pto-summary' | 'rooms-open-monthly';
+interface Provider {
+  id: string;
+  name: string;
+  initials: string;
+  default_room_count: number;
+}
+
+type ReportType = 'general-stats' | 'provider-workload' | 'service-coverage' | 'room-utilization' | 'pto-summary' | 'rooms-open-monthly' | 'provider-availability';
 
 export default function ReportsPage() {
   const [reportType, setReportType] = useState<ReportType>('general-stats');
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [selectedProviderIds, setSelectedProviderIds] = useState<Set<string>>(new Set());
+  const [filledSelections, setFilledSelections] = useState<Map<string, Set<string>>>(new Map()); // slot key -> provider ids
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
     date.setDate(1);
@@ -35,14 +45,55 @@ export default function ReportsPage() {
     { value: 'room-utilization', label: 'Room Utilization' },
     { value: 'pto-summary', label: 'PTO Summary' },
     { value: 'rooms-open-monthly', label: 'Open Rooms (Monthly)' },
+    { value: 'provider-availability', label: 'Provider Availability Planner' },
   ];
+
+  // Fetch providers when provider-availability report is selected
+  useEffect(() => {
+    if (reportType === 'provider-availability' && providers.length === 0) {
+      fetch('/api/providers')
+        .then(res => res.json())
+        .then(data => setProviders(data))
+        .catch(err => console.error('Error fetching providers:', err));
+    }
+  }, [reportType, providers.length]);
+
+  const toggleProviderSelection = (providerId: string) => {
+    setSelectedProviderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(providerId)) {
+        next.delete(providerId);
+      } else {
+        next.add(providerId);
+      }
+      return next;
+    });
+  };
+
+  const toggleFillSelection = (slotKey: string, providerId: string) => {
+    setFilledSelections(prev => {
+      const next = new Map(prev);
+      const slotProviders = next.get(slotKey) || new Set();
+      const newSlotProviders = new Set(slotProviders);
+      if (newSlotProviders.has(providerId)) {
+        newSlotProviders.delete(providerId);
+      } else {
+        newSlotProviders.add(providerId);
+      }
+      next.set(slotKey, newSlotProviders);
+      return next;
+    });
+  };
 
   const generateReport = async () => {
     setLoading(true);
+    setFilledSelections(new Map()); // Reset selections
     try {
-      const response = await fetch(
-        `/api/reports?type=${reportType}&startDate=${startDate}&endDate=${endDate}`
-      );
+      let url = `/api/reports?type=${reportType}&startDate=${startDate}&endDate=${endDate}`;
+      if (reportType === 'provider-availability' && selectedProviderIds.size > 0) {
+        url += `&providerIds=${Array.from(selectedProviderIds).join(',')}`;
+      }
+      const response = await fetch(url);
       const data = await response.json();
       setReport(data);
     } catch (error) {
@@ -313,6 +364,139 @@ export default function ReportsPage() {
         );
       }
 
+      case 'provider-availability': {
+        if (!report.slots || report.slots.length === 0) {
+          return (
+            <div className="bg-white rounded-lg shadow p-6 text-center text-gray-500">
+              {selectedProviderIds.size === 0
+                ? 'Please select at least one provider and generate the report.'
+                : 'No understaffed slots found where selected providers are available.'}
+            </div>
+          );
+        }
+
+        // Calculate summary stats
+        let slotsReachingTarget = 0;
+        let slotsStillUnder = 0;
+
+        report.slots.forEach((slot: any) => {
+          const slotKey = `${slot.date}-${slot.timeBlock}`;
+          const filledProviders = filledSelections.get(slotKey) || new Set();
+          const addedRooms = slot.availableProviders
+            .filter((p: any) => filledProviders.has(p.id))
+            .reduce((sum: number, p: any) => sum + p.roomCount, 0);
+          const projected = slot.currentRooms + addedRooms;
+          if (projected >= 14) {
+            slotsReachingTarget++;
+          } else {
+            slotsStillUnder++;
+          }
+        });
+
+        return (
+          <div className="space-y-4">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-white p-4 rounded-lg shadow">
+                <div className="text-sm text-gray-500">Understaffed Slots</div>
+                <div className="text-2xl font-bold" style={{ color: '#D97706' }}>
+                  {report.slots.length}
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-lg shadow">
+                <div className="text-sm text-gray-500">Would Reach Target</div>
+                <div className="text-2xl font-bold" style={{ color: colors.teal }}>
+                  {slotsReachingTarget}
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-lg shadow">
+                <div className="text-sm text-gray-500">Still Under 14</div>
+                <div className="text-2xl font-bold" style={{ color: '#DC2626' }}>
+                  {slotsStillUnder}
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Table */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr style={{ backgroundColor: colors.primaryBlue }}>
+                    <th className="px-4 py-3 text-left text-white text-sm font-medium">Date</th>
+                    <th className="px-4 py-3 text-center text-white text-sm font-medium">Time</th>
+                    <th className="px-4 py-3 text-center text-white text-sm font-medium">Current</th>
+                    <th className="px-4 py-3 text-left text-white text-sm font-medium">Available Providers (click to fill)</th>
+                    <th className="px-4 py-3 text-center text-white text-sm font-medium">Projected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.slots.map((slot: any, idx: number) => {
+                    const slotKey = `${slot.date}-${slot.timeBlock}`;
+                    const filledProviders = filledSelections.get(slotKey) || new Set();
+                    const addedRooms = slot.availableProviders
+                      .filter((p: any) => filledProviders.has(p.id))
+                      .reduce((sum: number, p: any) => sum + p.roomCount, 0);
+                    const projected = slot.currentRooms + addedRooms;
+                    const reachesTarget = projected >= 14;
+
+                    return (
+                      <tr key={slotKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-4 py-3 font-medium">{slot.dayName}</td>
+                        <td className="px-4 py-3 text-center">{slot.timeBlock}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="font-bold" style={{ color: '#D97706' }}>
+                            {slot.currentRooms}
+                          </span>
+                          <span className="text-gray-400 text-sm">/{slot.target}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {slot.availableProviders.map((provider: any) => {
+                              const isFilled = filledProviders.has(provider.id);
+                              return (
+                                <button
+                                  key={provider.id}
+                                  onClick={() => toggleFillSelection(slotKey, provider.id)}
+                                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                                    isFilled
+                                      ? 'text-white'
+                                      : 'border hover:bg-gray-100'
+                                  }`}
+                                  style={{
+                                    backgroundColor: isFilled ? colors.teal : 'transparent',
+                                    borderColor: isFilled ? colors.teal : colors.border,
+                                    color: isFilled ? 'white' : colors.primaryBlue
+                                  }}
+                                >
+                                  {provider.initials} (+{provider.roomCount})
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span
+                            className="font-bold text-lg"
+                            style={{ color: reachesTarget ? colors.teal : '#D97706' }}
+                          >
+                            {projected}
+                          </span>
+                          {addedRooms > 0 && (
+                            <span className="ml-1 text-sm" style={{ color: colors.teal }}>
+                              (+{addedRooms})
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      }
+
       default:
         return <div className="text-gray-500">Unknown report type</div>;
     }
@@ -363,7 +547,7 @@ export default function ReportsPage() {
           <div className="flex items-end">
             <button
               onClick={generateReport}
-              disabled={loading}
+              disabled={loading || (reportType === 'provider-availability' && selectedProviderIds.size === 0)}
               className="w-full px-4 py-2 rounded text-white font-medium disabled:opacity-50"
               style={{ backgroundColor: colors.primaryBlue }}
             >
@@ -371,6 +555,40 @@ export default function ReportsPage() {
             </button>
           </div>
         </div>
+
+        {/* Provider Selector for Provider Availability Report */}
+        {reportType === 'provider-availability' && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: colors.border }}>
+            <label className="block text-sm font-medium mb-2">
+              Select Providers to Check Availability ({selectedProviderIds.size} selected)
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {providers.map(provider => {
+                const isSelected = selectedProviderIds.has(provider.id);
+                return (
+                  <button
+                    key={provider.id}
+                    onClick={() => toggleProviderSelection(provider.id)}
+                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                      isSelected ? 'text-white' : 'border hover:bg-gray-100'
+                    }`}
+                    style={{
+                      backgroundColor: isSelected ? colors.primaryBlue : 'transparent',
+                      borderColor: isSelected ? colors.primaryBlue : colors.border,
+                      color: isSelected ? 'white' : colors.primaryBlue
+                    }}
+                  >
+                    {provider.initials}
+                    <span className="ml-1 text-xs opacity-75">({provider.default_room_count || 3})</span>
+                  </button>
+                );
+              })}
+            </div>
+            {providers.length === 0 && (
+              <div className="text-sm text-gray-500">Loading providers...</div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Report Results */}

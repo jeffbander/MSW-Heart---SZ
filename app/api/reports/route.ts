@@ -27,6 +27,9 @@ export async function GET(request: Request) {
         return await getPTOSummaryReport(startDate, endDate);
       case 'rooms-open-monthly':
         return await getRoomsOpenMonthlyReport(startDate, endDate);
+      case 'provider-availability':
+        const providerIds = searchParams.get('providerIds');
+        return await getProviderAvailabilityReport(startDate, endDate, providerIds ? providerIds.split(',') : []);
       default:
         return await getGeneralStatsReport(startDate, endDate);
     }
@@ -298,5 +301,175 @@ async function getRoomsOpenMonthlyReport(startDate: string, endDate: string) {
     dateRange: { startDate, endDate },
     data: openSlots,
     totalOpenRooms
+  });
+}
+
+async function getProviderAvailabilityReport(startDate: string, endDate: string, providerIds: string[]) {
+  // Fetch selected providers
+  const { data: providers } = await supabase
+    .from('providers')
+    .select('id, name, initials, default_room_count')
+    .in('id', providerIds.length > 0 ? providerIds : ['none']);
+
+  if (!providers || providers.length === 0) {
+    return NextResponse.json({
+      type: 'provider-availability',
+      dateRange: { startDate, endDate },
+      slots: [],
+      providers: []
+    });
+  }
+
+  // Fetch all room assignments for the date range
+  const { data: roomAssignments } = await supabase
+    .from('schedule_assignments')
+    .select('date, time_block, room_count, provider_id')
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .gt('room_count', 0);
+
+  // Fetch all assignments (to check for blocking services)
+  const { data: allAssignments } = await supabase
+    .from('schedule_assignments')
+    .select(`
+      date,
+      time_block,
+      provider_id,
+      is_pto,
+      service:services(name)
+    `)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  // Services that block room assignments
+  const blockingServices = ['Consults', 'Burgundy', 'Echo Lab', 'Nuclear'];
+
+  // Build map of room counts per slot
+  const roomCountMap = new Map<string, number>();
+  roomAssignments?.forEach((a: any) => {
+    const key = `${a.date}-${a.time_block}`;
+    roomCountMap.set(key, (roomCountMap.get(key) || 0) + a.room_count);
+  });
+
+  // Build map of provider assignments per slot
+  const providerAssignmentMap = new Map<string, Set<string>>();
+  const providerPTOMap = new Map<string, Set<string>>();
+  const providerBlockedMap = new Map<string, Set<string>>();
+
+  allAssignments?.forEach((a: any) => {
+    const key = `${a.date}-${a.time_block}`;
+    const providerId = a.provider_id;
+
+    // Track if provider has rooms assigned
+    if (!providerAssignmentMap.has(key)) {
+      providerAssignmentMap.set(key, new Set());
+    }
+
+    // Track PTO
+    if (a.is_pto) {
+      if (!providerPTOMap.has(key)) {
+        providerPTOMap.set(key, new Set());
+      }
+      providerPTOMap.get(key)!.add(providerId);
+    }
+
+    // Track blocking services
+    const serviceName = a.service?.name || '';
+    if (blockingServices.some(bs => serviceName.includes(bs))) {
+      if (!providerBlockedMap.has(key)) {
+        providerBlockedMap.set(key, new Set());
+      }
+      providerBlockedMap.get(key)!.add(providerId);
+    }
+  });
+
+  // Also check for providers already in rooms
+  roomAssignments?.forEach((a: any) => {
+    const key = `${a.date}-${a.time_block}`;
+    if (!providerAssignmentMap.has(key)) {
+      providerAssignmentMap.set(key, new Set());
+    }
+    providerAssignmentMap.get(key)!.add(a.provider_id);
+  });
+
+  // Generate slots
+  const slots: {
+    date: string;
+    dayName: string;
+    timeBlock: string;
+    currentRooms: number;
+    target: number;
+    availableProviders: { id: string; initials: string; roomCount: number }[];
+  }[] = [];
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const current = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+
+  while (current <= end) {
+    const dayOfWeek = current.getDay();
+    const dateStr = current.toISOString().split('T')[0];
+
+    // Skip weekends and holidays
+    if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isHoliday(dateStr)) {
+      const dayName = dayNames[dayOfWeek];
+      const month = current.getMonth() + 1;
+      const day = current.getDate();
+      const formattedDate = `${month}/${day}`;
+
+      ['AM', 'PM'].forEach(timeBlock => {
+        const key = `${dateStr}-${timeBlock}`;
+        const currentRooms = roomCountMap.get(key) || 0;
+
+        // Target: Wed/Thu PM = 15, others = 14
+        const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && timeBlock === 'PM';
+        const target = isExtendedDay ? 15 : 14;
+
+        // Only include slots that are understaffed (< 14)
+        if (currentRooms < 14) {
+          // Find available providers
+          const ptoSet = providerPTOMap.get(key) || new Set();
+          const blockedSet = providerBlockedMap.get(key) || new Set();
+          const assignedSet = providerAssignmentMap.get(key) || new Set();
+
+          const availableProviders = providers
+            .filter((p: any) => {
+              // Not on PTO
+              if (ptoSet.has(p.id)) return false;
+              // Not blocked by other service
+              if (blockedSet.has(p.id)) return false;
+              // Not already assigned to rooms
+              if (assignedSet.has(p.id)) return false;
+              return true;
+            })
+            .map((p: any) => ({
+              id: p.id,
+              initials: p.initials,
+              roomCount: p.default_room_count || 3
+            }));
+
+          // Only add slot if at least one provider is available
+          if (availableProviders.length > 0) {
+            slots.push({
+              date: dateStr,
+              dayName: `${dayName} ${formattedDate}`,
+              timeBlock,
+              currentRooms,
+              target,
+              availableProviders
+            });
+          }
+        }
+      });
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return NextResponse.json({
+    type: 'provider-availability',
+    dateRange: { startDate, endDate },
+    providers: providers.map((p: any) => ({ id: p.id, initials: p.initials, name: p.name, roomCount: p.default_room_count || 3 })),
+    slots
   });
 }
