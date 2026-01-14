@@ -16,13 +16,22 @@ interface Provider {
   default_room_count: number;
 }
 
+interface Service {
+  id: string;
+  name: string;
+  time_block: string;
+}
+
 type ReportType = 'general-stats' | 'provider-workload' | 'service-coverage' | 'room-utilization' | 'pto-summary' | 'rooms-open-monthly' | 'provider-availability';
 
 export default function ReportsPage() {
   const [reportType, setReportType] = useState<ReportType>('general-stats');
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [selectedProviderIds, setSelectedProviderIds] = useState<Set<string>>(new Set());
   const [filledSelections, setFilledSelections] = useState<Map<string, Set<string>>>(new Map()); // slot key -> provider ids
+  const [saving, setSaving] = useState(false);
+  const [saveResult, setSaveResult] = useState<{ success: number; errors: number } | null>(null);
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
     date.setDate(1);
@@ -48,15 +57,101 @@ export default function ReportsPage() {
     { value: 'provider-availability', label: 'Provider Availability Planner' },
   ];
 
-  // Fetch providers when provider-availability report is selected
+  // Fetch providers and services when provider-availability report is selected
   useEffect(() => {
-    if (reportType === 'provider-availability' && providers.length === 0) {
-      fetch('/api/providers')
-        .then(res => res.json())
-        .then(data => setProviders(data))
-        .catch(err => console.error('Error fetching providers:', err));
+    if (reportType === 'provider-availability') {
+      if (providers.length === 0) {
+        fetch('/api/providers')
+          .then(res => res.json())
+          .then(data => setProviders(data))
+          .catch(err => console.error('Error fetching providers:', err));
+      }
+      if (services.length === 0) {
+        fetch('/api/services')
+          .then(res => res.json())
+          .then(data => setServices(data))
+          .catch(err => console.error('Error fetching services:', err));
+      }
     }
-  }, [reportType, providers.length]);
+  }, [reportType, providers.length, services.length]);
+
+  // Save filled selections to calendar
+  const saveToCalendar = async () => {
+    if (!report?.slots || filledSelections.size === 0) return;
+
+    setSaving(true);
+    setSaveResult(null);
+    let successCount = 0;
+    let errorCount = 0;
+
+    // Get Rooms AM and PM service IDs
+    const roomsAM = services.find(s => s.name === 'Rooms AM');
+    const roomsPM = services.find(s => s.name === 'Rooms PM');
+
+    if (!roomsAM || !roomsPM) {
+      alert('Could not find Rooms services. Please try again.');
+      setSaving(false);
+      return;
+    }
+
+    // Loop through all slots and their filled providers
+    for (const slot of report.slots) {
+      const slotKey = `${slot.date}-${slot.timeBlock}`;
+      const filledProviderIds = filledSelections.get(slotKey);
+
+      if (!filledProviderIds || filledProviderIds.size === 0) continue;
+
+      const serviceId = slot.timeBlock === 'AM' ? roomsAM.id : roomsPM.id;
+
+      for (const providerId of filledProviderIds) {
+        const provider = slot.availableProviders.find((p: any) => p.id === providerId);
+        if (!provider) continue;
+
+        try {
+          const response = await fetch('/api/assignments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              date: slot.date,
+              service_id: serviceId,
+              provider_id: providerId,
+              time_block: slot.timeBlock,
+              room_count: provider.roomCount,
+              is_pto: false,
+              is_covering: false
+            })
+          });
+
+          if (response.ok) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch {
+          errorCount++;
+        }
+      }
+    }
+
+    setSaveResult({ success: successCount, errors: errorCount });
+    setSaving(false);
+
+    // Refresh the report to show updated data
+    if (successCount > 0) {
+      setTimeout(() => {
+        generateReport();
+      }, 1000);
+    }
+  };
+
+  // Count total filled selections
+  const getTotalFilledCount = () => {
+    let count = 0;
+    filledSelections.forEach(providers => {
+      count += providers.size;
+    });
+    return count;
+  };
 
   const toggleProviderSelection = (providerId: string) => {
     setSelectedProviderIds(prev => {
@@ -423,23 +518,48 @@ export default function ReportsPage() {
           URL.revokeObjectURL(url);
         };
 
+        const filledCount = getTotalFilledCount();
+
         return (
           <div className="space-y-4">
-            {/* Header with Download Button */}
-            <div className="flex justify-between items-center">
+            {/* Header with Action Buttons */}
+            <div className="flex justify-between items-center flex-wrap gap-2">
               <h3 className="text-lg font-semibold" style={{ color: colors.primaryBlue }}>
                 Provider Availability Report
               </h3>
-              <button
-                onClick={downloadCSV}
-                className="px-4 py-2 rounded text-white font-medium flex items-center gap-2"
-                style={{ backgroundColor: colors.lightBlue }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download CSV
-              </button>
+              <div className="flex gap-2 items-center">
+                {/* Save Result Feedback */}
+                {saveResult && (
+                  <span className={`text-sm ${saveResult.errors > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                    {saveResult.success} saved{saveResult.errors > 0 ? `, ${saveResult.errors} failed` : ''}
+                  </span>
+                )}
+                {/* Save to Calendar Button */}
+                {filledCount > 0 && (
+                  <button
+                    onClick={saveToCalendar}
+                    disabled={saving}
+                    className="px-4 py-2 rounded text-white font-medium flex items-center gap-2 disabled:opacity-50"
+                    style={{ backgroundColor: colors.teal }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    {saving ? 'Saving...' : `Save to Calendar (${filledCount})`}
+                  </button>
+                )}
+                {/* Download CSV Button */}
+                <button
+                  onClick={downloadCSV}
+                  className="px-4 py-2 rounded text-white font-medium flex items-center gap-2"
+                  style={{ backgroundColor: colors.lightBlue }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download CSV
+                </button>
+              </div>
             </div>
 
             {/* Summary Cards */}

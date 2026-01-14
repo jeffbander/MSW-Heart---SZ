@@ -441,6 +441,19 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
     return false;
   };
 
+  // Helper: Check if provider is blocked by a service for a specific date/time (handles BOTH)
+  const isBlockedByService = (providerId: string, dateStr: string, timeBlock: string): boolean => {
+    // Check exact time block
+    const exactKey = `${dateStr}-${timeBlock}`;
+    if (providerBlockedMap.get(exactKey)?.has(providerId)) return true;
+
+    // Check BOTH (full day service like "Fourth Floor Echo Lab" blocks both AM and PM)
+    const bothKey = `${dateStr}-BOTH`;
+    if (providerBlockedMap.get(bothKey)?.has(providerId)) return true;
+
+    return false;
+  };
+
   // Generate slots
   const slots: {
     date: string;
@@ -477,8 +490,9 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
         // Only include slots that are understaffed (< 14)
         if (currentRooms < 14) {
           // Find available providers
-          const blockedSet = providerBlockedMap.get(key) || new Set();
           const assignedSet = providerAssignmentMap.get(key) || new Set();
+          // Also check BOTH for assigned (provider in rooms for full day)
+          const assignedBoth = providerAssignmentMap.get(`${dateStr}-BOTH`) || new Set();
 
           const availableProviders = providers
             .filter((p: any) => {
@@ -488,10 +502,10 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
               if (isOnLeave(p.id, dateStr)) return false;
               // Not blocked by hard availability rule
               if (hasAvailabilityBlock(p.id, dayOfWeek, timeBlock)) return false;
-              // Not blocked by other service (Consults, Burgundy, etc.)
-              if (blockedSet.has(p.id)) return false;
-              // Not already assigned to rooms
-              if (assignedSet.has(p.id)) return false;
+              // Not blocked by other service (Consults, Burgundy, Fourth Floor Echo Lab, etc.) - handles BOTH
+              if (isBlockedByService(p.id, dateStr, timeBlock)) return false;
+              // Not already assigned to rooms (check both exact and BOTH)
+              if (assignedSet.has(p.id) || assignedBoth.has(p.id)) return false;
               return true;
             })
             .map((p: any) => ({
