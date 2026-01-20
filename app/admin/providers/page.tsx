@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Provider } from '@/lib/types';
+import { useAdmin } from '@/app/contexts/AdminContext';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -36,6 +37,7 @@ const AVAILABLE_CAPABILITIES = [
 ];
 
 export default function ProvidersAdminPage() {
+  const { isAdminMode } = useAdmin();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
@@ -260,8 +262,10 @@ export default function ProvidersAdminPage() {
         </h2>
         <button
           onClick={() => { setIsCreating(true); resetForm(); }}
-          className="px-4 py-2 rounded text-white font-medium"
+          disabled={!isAdminMode}
+          className={`px-4 py-2 rounded text-white font-medium ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
           style={{ backgroundColor: colors.teal }}
+          title={!isAdminMode ? 'Admin Mode required' : ''}
         >
           + Add Provider
         </button>
@@ -538,7 +542,9 @@ export default function ProvidersAdminPage() {
                   ) : ptoBalances[provider.id] ? (
                     <button
                       onClick={() => startEditPTO(provider)}
-                      className="text-left group"
+                      disabled={!isAdminMode}
+                      className={`text-left group ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      title={!isAdminMode ? 'Admin Mode required' : ''}
                     >
                       <div className="flex items-center gap-2">
                         <span
@@ -567,7 +573,9 @@ export default function ProvidersAdminPage() {
                   ) : (
                     <button
                       onClick={() => startEditPTO(provider)}
-                      className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                      disabled={!isAdminMode}
+                      className={`text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      title={!isAdminMode ? 'Admin Mode required' : ''}
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -597,15 +605,19 @@ export default function ProvidersAdminPage() {
                 <td className="px-4 py-3 text-right">
                   <button
                     onClick={() => startEdit(provider)}
-                    className="px-3 py-1 rounded text-sm mr-2"
+                    disabled={!isAdminMode}
+                    className={`px-3 py-1 rounded text-sm mr-2 ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     style={{ backgroundColor: colors.lightBlue, color: 'white' }}
+                    title={!isAdminMode ? 'Admin Mode required' : ''}
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => handleDelete(provider.id)}
-                    className="px-3 py-1 rounded text-sm"
+                    disabled={!isAdminMode}
+                    className={`px-3 py-1 rounded text-sm ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                     style={{ backgroundColor: colors.ptoRed, color: 'white' }}
+                    title={!isAdminMode ? 'Admin Mode required' : ''}
                   >
                     Delete
                   </button>

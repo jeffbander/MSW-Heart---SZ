@@ -935,12 +935,6 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                   Provider View
                 </button>
               </div>
-              <Link
-                href="/admin"
-                className="px-4 py-2 rounded-md text-sm font-medium bg-white/20 text-white hover:bg-white/30 transition-colors"
-              >
-                Admin Panel
-              </Link>
             </div>
           </div>
         </div>

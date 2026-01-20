@@ -32,9 +32,6 @@ const defaultTabs: NavItem[] = [
 const secondaryTabs: NavItem[] = [
   { id: 'providers', label: 'Providers', href: '/providers' },
   { id: 'dashboard', label: 'Dashboard', href: '/dashboard' },
-];
-
-const adminTabs: NavItem[] = [
   { id: 'pto-approvals', label: 'PTO Approvals', href: '/admin/pto-requests' },
   { id: 'manage-providers', label: 'Manage Providers', href: '/admin/providers' },
   { id: 'manage-services', label: 'Manage Services', href: '/admin/services' },
@@ -171,33 +168,6 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps)
               </Link>
             ))}
           </div>
-
-          {/* Admin Section */}
-          {isAdminMode && (
-            <>
-              <div className="my-4 mx-3 border-t border-white/20" />
-              <div className="px-3">
-                <p className="px-3 mb-2 text-xs font-semibold text-blue-200 uppercase tracking-wider">
-                  Admin
-                </p>
-                <div className="space-y-1">
-                  {adminTabs.map((item) => (
-                    <Link
-                      key={item.id}
-                      href={item.href}
-                      className={`flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                        isActive(item.href)
-                          ? 'bg-white/20 text-white'
-                          : 'text-blue-100 hover:bg-white/10 hover:text-white'
-                      }`}
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
         </nav>
 
         {/* Footer - Admin Toggle */}

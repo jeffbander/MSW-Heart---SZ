@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Provider, PTORequest, LeaveType, PTOTimeBlock } from '@/lib/types';
 import PTOCalendar from '@/app/components/admin/PTOCalendar';
+import { useAdmin } from '@/app/contexts/AdminContext';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -34,6 +35,7 @@ type TabType = 'pending' | 'approved' | 'denied' | 'all';
 type ViewMode = 'calendar' | 'table';
 
 export default function AdminPTORequestsPage() {
+  const { isAdminMode } = useAdmin();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [requests, setRequests] = useState<PTORequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -250,8 +252,10 @@ export default function AdminPTORequestsPage() {
           </div>
           <button
             onClick={() => setShowAdminForm(!showAdminForm)}
-            className="px-4 py-2 rounded text-white font-medium"
+            disabled={!isAdminMode}
+            className={`px-4 py-2 rounded text-white font-medium ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
             style={{ backgroundColor: colors.teal }}
+            title={!isAdminMode ? 'Admin Mode required' : ''}
           >
             {showAdminForm ? 'Cancel' : '+ Add PTO Entry'}
           </button>
@@ -508,15 +512,19 @@ export default function AdminPTORequestsPage() {
                           <>
                             <button
                               onClick={() => handleAction(req, 'approve')}
-                              className="px-3 py-1 text-xs rounded text-white font-medium"
+                              disabled={!isAdminMode}
+                              className={`px-3 py-1 text-xs rounded text-white font-medium ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                               style={{ backgroundColor: colors.success }}
+                              title={!isAdminMode ? 'Admin Mode required' : ''}
                             >
                               Approve
                             </button>
                             <button
                               onClick={() => handleAction(req, 'deny')}
-                              className="px-3 py-1 text-xs rounded text-white font-medium"
+                              disabled={!isAdminMode}
+                              className={`px-3 py-1 text-xs rounded text-white font-medium ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                               style={{ backgroundColor: colors.error }}
+                              title={!isAdminMode ? 'Admin Mode required' : ''}
                             >
                               Deny
                             </button>
@@ -524,9 +532,10 @@ export default function AdminPTORequestsPage() {
                         )}
                         <button
                           onClick={() => handleDelete(req)}
-                          className="px-3 py-1 text-xs rounded border font-medium hover:bg-red-50"
+                          disabled={!isAdminMode}
+                          className={`px-3 py-1 text-xs rounded border font-medium hover:bg-red-50 ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                           style={{ borderColor: colors.error, color: colors.error }}
-                          title="Delete this PTO request"
+                          title={!isAdminMode ? 'Admin Mode required' : 'Delete this PTO request'}
                         >
                           Delete
                         </button>

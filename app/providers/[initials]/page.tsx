@@ -8,6 +8,8 @@ import { Provider, Service, ScheduleAssignment, PTOSummary } from '@/lib/types';
 import ProviderAvailabilityEditor from '@/app/components/ProviderAvailabilityEditor';
 import ProviderLeaveManager from '@/app/components/ProviderLeaveManager';
 import ProviderAssignmentModal from '@/app/components/ProviderAssignmentModal';
+import { useAdmin } from '@/app/contexts/AdminContext';
+import PasscodeModal from '@/app/components/layout/PasscodeModal';
 
 // Mount Sinai Colors
 const colors = {
@@ -76,6 +78,10 @@ export default function ProviderProfilePage() {
     timeBlock: 'AM' | 'PM';
   } | null>(null);
   const [ptoSummary, setPtoSummary] = useState<PTOSummary | null>(null);
+  const [showPasscodeModal, setShowPasscodeModal] = useState(false);
+
+  // Admin authentication
+  const { isAuthenticated, authenticate } = useAdmin();
 
   // Fetch provider data
   useEffect(() => {
@@ -292,16 +298,18 @@ export default function ProviderProfilePage() {
                 ))}
               </div>
 
-              {/* Availability Rules Button */}
-              <div className="mt-4">
-                <button
-                  onClick={() => setShowAvailabilityEditor(!showAvailabilityEditor)}
-                  className="px-4 py-2 rounded text-sm font-medium"
-                  style={{ backgroundColor: colors.lightBlue, color: 'white' }}
-                >
-                  {showAvailabilityEditor ? 'Hide' : 'Manage'} Availability Rules
-                </button>
-              </div>
+              {/* Availability Rules Button - Admin Only */}
+              {isAuthenticated && (
+                <div className="mt-4">
+                  <button
+                    onClick={() => setShowAvailabilityEditor(!showAvailabilityEditor)}
+                    className="px-4 py-2 rounded text-sm font-medium"
+                    style={{ backgroundColor: colors.lightBlue, color: 'white' }}
+                  >
+                    {showAvailabilityEditor ? 'Hide' : 'Manage'} Availability Rules
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* PTO Summary Card */}
@@ -428,7 +436,10 @@ export default function ProviderProfilePage() {
           <WeeklySchedule
             assignments={assignments}
             currentDate={currentDate}
-            onCellClick={(date, timeBlock) => setSelectedSlot({ date, timeBlock })}
+            onCellClick={isAuthenticated
+              ? (date, timeBlock) => setSelectedSlot({ date, timeBlock })
+              : () => setShowPasscodeModal(true)
+            }
           />
         ) : (
           <MonthlySchedule
@@ -437,13 +448,15 @@ export default function ProviderProfilePage() {
           />
         )}
 
-        {/* Leave Manager */}
-        <div className="mt-6">
-          <ProviderLeaveManager
-            providerId={provider.id}
-            providerName={provider.name}
-          />
-        </div>
+        {/* Leave Manager - Admin Only */}
+        {isAuthenticated && (
+          <div className="mt-6">
+            <ProviderLeaveManager
+              providerId={provider.id}
+              providerName={provider.name}
+            />
+          </div>
+        )}
       </main>
 
       {/* Assignment Modal */}
@@ -463,6 +476,13 @@ export default function ProviderProfilePage() {
           }}
         />
       )}
+
+      {/* Admin Passcode Modal */}
+      <PasscodeModal
+        isOpen={showPasscodeModal}
+        onClose={() => setShowPasscodeModal(false)}
+        onAuthenticate={authenticate}
+      />
     </div>
   );
 }

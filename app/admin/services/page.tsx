@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Service, Provider } from '@/lib/types';
+import { useAdmin } from '@/app/contexts/AdminContext';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -20,6 +21,7 @@ const AVAILABLE_CAPABILITIES = [
 ];
 
 export default function ServicesAdminPage() {
+  const { isAdminMode } = useAdmin();
   const [services, setServices] = useState<Service[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
@@ -171,8 +173,10 @@ export default function ServicesAdminPage() {
         </h2>
         <button
           onClick={() => { setIsCreating(true); resetForm(); }}
-          className="px-4 py-2 rounded text-white font-medium"
+          disabled={!isAdminMode}
+          className={`px-4 py-2 rounded text-white font-medium ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
           style={{ backgroundColor: colors.teal }}
+          title={!isAdminMode ? 'Admin Mode required' : ''}
         >
           + Add Service
         </button>
@@ -397,15 +401,19 @@ export default function ServicesAdminPage() {
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => startEdit(service)}
-                      className="px-3 py-1 rounded text-sm mr-2"
+                      disabled={!isAdminMode}
+                      className={`px-3 py-1 rounded text-sm mr-2 ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                       style={{ backgroundColor: colors.lightBlue, color: 'white' }}
+                      title={!isAdminMode ? 'Admin Mode required' : ''}
                     >
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(service.id)}
-                      className="px-3 py-1 rounded text-sm"
+                      disabled={!isAdminMode}
+                      className={`px-3 py-1 rounded text-sm ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                       style={{ backgroundColor: colors.ptoRed, color: 'white' }}
+                      title={!isAdminMode ? 'Admin Mode required' : ''}
                     >
                       Delete
                     </button>

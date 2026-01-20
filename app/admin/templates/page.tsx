@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ScheduleTemplate, TemplateType } from '@/lib/types';
+import { useAdmin } from '@/app/contexts/AdminContext';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -26,6 +27,7 @@ const TYPE_COLORS: Record<TemplateType, string> = {
 };
 
 export default function TemplatesAdminPage() {
+  const { isAdminMode } = useAdmin();
   const [templates, setTemplates] = useState<ScheduleTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -138,8 +140,10 @@ export default function TemplatesAdminPage() {
               setIsCreating(true);
               resetForm();
             }}
-            className="px-4 py-2 rounded text-white font-medium"
+            disabled={!isAdminMode}
+            className={`px-4 py-2 rounded text-white font-medium ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
             style={{ backgroundColor: colors.teal }}
+            title={!isAdminMode ? 'Admin Mode required' : ''}
           >
             + New Template
           </button>
@@ -280,16 +284,20 @@ export default function TemplatesAdminPage() {
                   <td className="px-4 py-3 text-sm text-gray-600">{formatDate(template.created_at)}</td>
                   <td className="px-4 py-3 text-right">
                     <Link
-                      href={`/admin/templates/${template.id}`}
-                      className="px-3 py-1 rounded text-sm mr-2 inline-block"
+                      href={isAdminMode ? `/admin/templates/${template.id}` : '#'}
+                      onClick={(e) => !isAdminMode && e.preventDefault()}
+                      className={`px-3 py-1 rounded text-sm mr-2 inline-block ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                       style={{ backgroundColor: colors.lightBlue, color: 'white' }}
+                      title={!isAdminMode ? 'Admin Mode required' : ''}
                     >
                       Edit
                     </Link>
                     <button
                       onClick={() => handleDelete(template.id)}
-                      className="px-3 py-1 rounded text-sm"
+                      disabled={!isAdminMode}
+                      className={`px-3 py-1 rounded text-sm ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
                       style={{ backgroundColor: colors.ptoRed, color: 'white' }}
+                      title={!isAdminMode ? 'Admin Mode required' : ''}
                     >
                       Delete
                     </button>
@@ -307,8 +315,10 @@ export default function TemplatesAdminPage() {
               setIsCreating(true);
               resetForm();
             }}
-            className="px-4 py-2 rounded text-white font-medium"
+            disabled={!isAdminMode}
+            className={`px-4 py-2 rounded text-white font-medium ${!isAdminMode ? 'opacity-50 cursor-not-allowed' : ''}`}
             style={{ backgroundColor: colors.teal }}
+            title={!isAdminMode ? 'Admin Mode required' : ''}
           >
             Create Your First Template
           </button>
