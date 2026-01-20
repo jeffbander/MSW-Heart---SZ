@@ -5,6 +5,14 @@ export interface Holiday {
   date: string; // YYYY-MM-DD format
 }
 
+// Helper to format date in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Services that can be scheduled on holidays (inpatient)
 export const INPATIENT_SERVICES = ['Consults', 'Burgundy'];
 
@@ -29,7 +37,7 @@ function getNthDayOfMonth(year: number, month: number, dayOfWeek: number, n: num
   const targetDate = firstOccurrence + (n - 1) * 7;
 
   const result = new Date(year, month, targetDate);
-  return result.toISOString().split('T')[0];
+  return formatLocalDate(result);
 }
 
 /**
@@ -47,7 +55,7 @@ function getLastDayOfMonth(year: number, month: number, dayOfWeek: number): stri
     lastDay.setDate(lastDay.getDate() - 1);
   }
 
-  return lastDay.toISOString().split('T')[0];
+  return formatLocalDate(lastDay);
 }
 
 /**
@@ -69,7 +77,7 @@ function getObservedDate(year: number, month: number, day: number): string {
     date.setDate(date.getDate() + 1);
   }
 
-  return date.toISOString().split('T')[0];
+  return formatLocalDate(date);
 }
 
 /**

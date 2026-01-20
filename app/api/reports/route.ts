@@ -2,6 +2,14 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { isHoliday } from '@/lib/holidays';
 
+// Helper to format date in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -251,7 +259,7 @@ async function getRoomsOpenMonthlyReport(startDate: string, endDate: string) {
 
   while (current <= end) {
     const dayOfWeek = current.getDay();
-    const dateStr = current.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(current);
 
     // Skip weekends and holidays
     if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isHoliday(dateStr)) {
@@ -470,7 +478,7 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
 
   while (current <= end) {
     const dayOfWeek = current.getDay();
-    const dateStr = current.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(current);
 
     // Skip weekends and holidays
     if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isHoliday(dateStr)) {

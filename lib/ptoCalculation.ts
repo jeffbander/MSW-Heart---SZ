@@ -1,6 +1,14 @@
 import { isHoliday, getHolidaysForYear, Holiday } from './holidays';
 import { PTOTimeBlock, PTOValidationWarning } from './types';
 
+// Helper to format date in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 /**
  * Calculate the number of PTO days for a given date range
  * Excludes weekends (Saturday, Sunday) and holidays
@@ -17,7 +25,7 @@ export function calculatePTODays(
 
   while (current <= end) {
     const dayOfWeek = current.getDay();
-    const dateStr = current.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(current);
 
     // Skip weekends (0=Sunday, 6=Saturday)
     if (dayOfWeek !== 0 && dayOfWeek !== 6) {
@@ -45,7 +53,7 @@ export function getWorkdaysInRange(startDate: string, endDate: string): string[]
 
   while (current <= end) {
     const dayOfWeek = current.getDay();
-    const dateStr = current.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(current);
 
     // Skip weekends
     if (dayOfWeek !== 0 && dayOfWeek !== 6) {
@@ -101,7 +109,7 @@ export function isRangeNearHoliday(
   const end = new Date(endDate + 'T00:00:00');
 
   while (current <= end) {
-    const dateStr = current.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(current);
     const result = isDateNearHoliday(dateStr, daysProximity);
 
     if (result.isNear) {

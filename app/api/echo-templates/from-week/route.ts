@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
+// Helper to format date in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // POST /api/echo-templates/from-week - Create template from existing week
 export async function POST(request: Request) {
   try {
@@ -19,8 +27,8 @@ export async function POST(request: Request) {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + 6);
 
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
+    const startDateStr = formatLocalDate(startDate);
+    const endDateStr = formatLocalDate(endDate);
 
     // Fetch existing assignments for the week
     const { data: assignments, error: fetchError } = await supabase

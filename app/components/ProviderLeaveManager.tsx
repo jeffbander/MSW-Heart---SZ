@@ -3,6 +3,14 @@
 import { useState, useEffect } from 'react';
 import { ProviderLeave, LeaveType } from '@/lib/types';
 
+// Helper to format date in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 const colors = {
   primaryBlue: '#003D7A',
   lightBlue: '#0078C8',
@@ -130,17 +138,17 @@ export default function ProviderLeaveManager({ providerId, providerName }: Provi
   };
 
   const isActiveLeave = (leave: ProviderLeave) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatLocalDate(new Date());
     return leave.start_date <= today && leave.end_date >= today;
   };
 
   const currentAndUpcomingLeaves = leaves.filter(l => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatLocalDate(new Date());
     return l.end_date >= today;
   });
 
   const pastLeaves = leaves.filter(l => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatLocalDate(new Date());
     return l.end_date < today;
   });
 

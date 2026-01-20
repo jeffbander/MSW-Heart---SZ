@@ -1,12 +1,20 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
+// Helper to format date in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Helper to get week start (Sunday) for a date
 function getWeekStart(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00');
   const dayOfWeek = date.getDay();
   date.setDate(date.getDate() - dayOfWeek);
-  return date.toISOString().split('T')[0];
+  return formatLocalDate(date);
 }
 
 // Helper to get week end (Saturday) for a date
@@ -14,7 +22,7 @@ function getWeekEnd(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00');
   const dayOfWeek = date.getDay();
   date.setDate(date.getDate() + (6 - dayOfWeek));
-  return date.toISOString().split('T')[0];
+  return formatLocalDate(date);
 }
 
 // POST - Create template from existing week's assignments

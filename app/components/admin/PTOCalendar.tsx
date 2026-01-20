@@ -3,6 +3,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Provider, PTORequest } from '@/lib/types';
 
+// Helper to format date in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 const colors = {
   primaryBlue: '#003D7A',
   lightBlue: '#0078C8',
@@ -83,11 +91,11 @@ export default function PTOCalendar({
 
   // Get requests for a specific date
   const getRequestsForDate = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(date);
     return filteredRequests.filter((r) => {
-      const start = new Date(r.start_date);
-      const end = new Date(r.end_date);
-      const checkDate = new Date(dateStr);
+      const start = new Date(r.start_date + 'T00:00:00');
+      const end = new Date(r.end_date + 'T00:00:00');
+      const checkDate = new Date(dateStr + 'T00:00:00');
       return checkDate >= start && checkDate <= end;
     });
   };

@@ -13,6 +13,14 @@ import EditAssignmentModal from './calendar/EditAssignmentModal';
 import DayMetadataModal from './DayMetadataModal';
 import BulkScheduleModal from './calendar/BulkScheduleModal';
 
+// Helper to format date in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Mount Sinai Colors
 const colors = {
   primaryBlue: '#003D7A',
@@ -145,7 +153,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     const start = new Date(currentDate);
 
     if (timeFrame === 'day') {
-      dates.push(start.toISOString().split('T')[0]);
+      dates.push(formatLocalDate(start));
     } else if (timeFrame === 'week') {
       // Start from Sunday of current week
       const dayOfWeek = start.getDay();
@@ -153,14 +161,14 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
       for (let i = 0; i < 7; i++) {
         const date = new Date(start);
         date.setDate(start.getDate() + i);
-        dates.push(date.toISOString().split('T')[0]);
+        dates.push(formatLocalDate(date));
       }
     } else if (timeFrame === 'month') {
       // Get first day of month
       start.setDate(1);
       const month = start.getMonth();
       while (start.getMonth() === month) {
-        dates.push(start.toISOString().split('T')[0]);
+        dates.push(formatLocalDate(start));
         start.setDate(start.getDate() + 1);
       }
     }

@@ -11,6 +11,14 @@ const XLSX = require('xlsx');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config({ path: '.env.local' });
 
+// Helper to format date in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -281,7 +289,7 @@ function parseSheet(workbook, sheetName) {
     const dayNum = dateRow[col];
     if (dayNum && typeof dayNum === 'number') {
       const date = new Date(year, month - 1, dayNum);
-      columnDateMap[col] = date.toISOString().split('T')[0];
+      columnDateMap[col] = formatLocalDate(date);
     }
   }
 

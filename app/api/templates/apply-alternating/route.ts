@@ -2,12 +2,20 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { isHoliday, isInpatientService } from '@/lib/holidays';
 
+// Helper to format date in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Helper to get week start (Sunday) for a date
 function getWeekStart(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00');
   const dayOfWeek = date.getDay();
   date.setDate(date.getDate() - dayOfWeek);
-  return date.toISOString().split('T')[0];
+  return formatLocalDate(date);
 }
 
 // Helper to get all weeks between start and end dates
@@ -17,9 +25,9 @@ function getWeeks(startDate: string, endDate: string): { start: string; end: str
   const end = new Date(endDate + 'T00:00:00');
 
   while (current <= end) {
-    const weekStart = current.toISOString().split('T')[0];
+    const weekStart = formatLocalDate(current);
     current.setDate(current.getDate() + 6);
-    const weekEnd = current.toISOString().split('T')[0];
+    const weekEnd = formatLocalDate(current);
 
     weeks.push({ start: weekStart, end: weekEnd });
 
@@ -130,7 +138,7 @@ export async function POST(request: Request) {
       for (let i = 0; i < 7; i++) {
         const date = new Date(weekStart);
         date.setDate(weekStart.getDate() + i);
-        const dateStr = date.toISOString().split('T')[0];
+        const dateStr = formatLocalDate(date);
 
         // Skip dates outside the requested range
         if (dateStr < startDate || dateStr > endDate) continue;
