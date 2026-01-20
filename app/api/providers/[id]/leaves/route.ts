@@ -44,7 +44,7 @@ export async function POST(
     }
 
     // Validate date range
-    if (new Date(start_date) > new Date(end_date)) {
+    if (new Date(start_date + 'T00:00:00') > new Date(end_date + 'T00:00:00')) {
       return NextResponse.json(
         { error: 'start_date must be before or equal to end_date' },
         { status: 400 }

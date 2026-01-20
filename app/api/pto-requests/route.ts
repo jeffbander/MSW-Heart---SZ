@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     }
 
     // Validate date range
-    if (new Date(start_date) > new Date(end_date)) {
+    if (new Date(start_date + 'T00:00:00') > new Date(end_date + 'T00:00:00')) {
       return NextResponse.json(
         { error: 'Start date must be before or equal to end date' },
         { status: 400 }

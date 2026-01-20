@@ -106,7 +106,7 @@ export default function TemplatesAdminPage() {
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',

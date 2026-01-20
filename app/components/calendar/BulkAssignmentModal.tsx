@@ -61,8 +61,8 @@ export default function BulkAssignmentModal({
     if (!dateRange.start || !dateRange.end) return [];
 
     const dates: string[] = [];
-    const start = new Date(dateRange.start);
-    const end = new Date(dateRange.end);
+    const start = new Date(dateRange.start + 'T00:00:00');
+    const end = new Date(dateRange.end + 'T00:00:00');
 
     const current = new Date(start);
     while (current <= end) {

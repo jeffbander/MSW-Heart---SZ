@@ -109,7 +109,7 @@ export default function PTOSubmissionPage() {
     }
 
     // Validate dates
-    if (new Date(endDate) < new Date(startDate)) {
+    if (new Date(endDate + 'T00:00:00') < new Date(startDate + 'T00:00:00')) {
       setWarnings([]);
       setCalculatedDays(null);
       return;
@@ -174,7 +174,7 @@ export default function PTOSubmissionPage() {
       return;
     }
 
-    if (new Date(endDate) < new Date(startDate)) {
+    if (new Date(endDate + 'T00:00:00') < new Date(startDate + 'T00:00:00')) {
       setError('End date cannot be before start date');
       return;
     }

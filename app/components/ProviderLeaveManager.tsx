@@ -71,7 +71,7 @@ export default function ProviderLeaveManager({ providerId, providerName }: Provi
       return;
     }
 
-    if (new Date(startDate) > new Date(endDate)) {
+    if (new Date(startDate + 'T00:00:00') > new Date(endDate + 'T00:00:00')) {
       alert('Start date must be before or equal to end date');
       return;
     }
