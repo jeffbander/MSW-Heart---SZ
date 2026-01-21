@@ -377,3 +377,15 @@ export interface EchoTemplateAssignment {
   echo_room?: EchoRoom;
   echo_tech?: EchoTech;
 }
+
+// ============================================
+// HOLIDAY TYPES
+// ============================================
+
+export interface Holiday {
+  id: string;
+  date: string;
+  name: string;
+  block_assignments: boolean;
+  created_at: string;
+}
