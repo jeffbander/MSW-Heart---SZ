@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTemplate } from '@/lib/types';
-import EchoCalendar from '@/app/components/EchoCalendar';
+import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTemplate, Holiday } from '@/lib/types';
+import { ScheduleGrid } from '@/components/schedule-grid';
 import EchoAssignmentModal from '@/app/components/EchoAssignmentModal';
 
 const colors = {
@@ -22,122 +22,13 @@ function formatLocalDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-// Capacity Summary Component - Shows daily capacity for each day
-function CapacitySummary({
-  dateRange,
-  echoTechs,
-  echoRooms,
-  assignments
-}: {
-  dateRange: string[];
-  echoTechs: EchoTech[];
-  echoRooms: EchoRoom[];
-  assignments: EchoScheduleAssignment[];
-}) {
-  const techMap = new Map(echoTechs.map(t => [t.id, t]));
-
-  // Calculate full-day capacity (AM + PM) for a specific date and capacity type
-  const calculateDayCapacity = (date: string, capacityType: string) => {
-    let total = 0;
-    const countedTechs = new Set<string>();
-
-    ['AM', 'PM'].forEach(timeBlock => {
-      echoRooms
-        .filter(room => room.capacity_type === capacityType && room.category === 'CVI')
-        .forEach(room => {
-          const roomAssignments = assignments.filter(
-            a => a.echo_room_id === room.id && a.date === date && a.time_block === timeBlock
-          );
-          roomAssignments.forEach(assignment => {
-            const key = `${timeBlock}-${assignment.echo_tech_id}`;
-            if (!countedTechs.has(key)) {
-              const tech = techMap.get(assignment.echo_tech_id);
-              if (tech) {
-                total += tech.capacity_per_half_day;
-                countedTechs.add(key);
-              }
-            }
-          });
-        });
-    });
-
-    return total;
-  };
-
-  const formatDateHeader = (dateStr: string) => {
-    const date = new Date(dateStr + 'T00:00:00');
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    return { dayName: days[date.getDay()], dateStr: `${month}/${day}` };
-  };
-
-  const isWeekend = (dateStr: string) => {
-    const date = new Date(dateStr + 'T00:00:00');
-    return date.getDay() === 0 || date.getDay() === 6;
-  };
-
-  // Filter out weekends
-  const weekdays = dateRange.filter(date => !isWeekend(date));
-
-  return (
-    <div className="bg-white rounded-lg shadow-sm p-4 mb-4 overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr>
-            <th className="text-left p-2 font-medium text-gray-600" style={{ minWidth: '100px' }}>Capacity</th>
-            {weekdays.map(date => {
-              const { dayName, dateStr } = formatDateHeader(date);
-              return (
-                <th
-                  key={date}
-                  className="text-center p-2 font-medium"
-                  style={{ minWidth: '70px' }}
-                >
-                  <div>{dayName}</div>
-                  <div className="text-xs font-normal">{dateStr}</div>
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className="p-2 font-medium" style={{ color: colors.teal }}>Echo</td>
-            {weekdays.map(date => (
-              <td key={date} className="text-center p-2 font-bold text-lg" style={{ color: colors.primaryBlue }}>
-                {calculateDayCapacity(date, 'echo')}
-              </td>
-            ))}
-          </tr>
-          <tr>
-            <td className="p-2 font-medium" style={{ color: colors.lightBlue }}>Stress Echo</td>
-            {weekdays.map(date => (
-              <td key={date} className="text-center p-2 font-bold text-lg" style={{ color: colors.primaryBlue }}>
-                {calculateDayCapacity(date, 'stress_echo')}
-              </td>
-            ))}
-          </tr>
-          <tr>
-            <td className="p-2 font-medium" style={{ color: colors.primaryBlue }}>Vascular</td>
-            {weekdays.map(date => (
-              <td key={date} className="text-center p-2 font-bold text-lg" style={{ color: colors.primaryBlue }}>
-                {calculateDayCapacity(date, 'vascular')}
-              </td>
-            ))}
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 export default function EchoPage() {
   // Data state
   const [echoTechs, setEchoTechs] = useState<EchoTech[]>([]);
   const [echoRooms, setEchoRooms] = useState<EchoRoom[]>([]);
   const [assignments, setAssignments] = useState<EchoScheduleAssignment[]>([]);
   const [ptoDays, setPtoDays] = useState<EchoPTO[]>([]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
 
   // UI state
@@ -202,17 +93,19 @@ export default function EchoPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [techsRes, roomsRes, assignmentsRes, ptoRes] = await Promise.all([
+      const [techsRes, roomsRes, assignmentsRes, ptoRes, holidaysRes] = await Promise.all([
         fetch('/api/echo-techs'),
         fetch('/api/echo-rooms'),
         fetch(`/api/echo-schedule?startDate=${weekStartDate}&endDate=${weekEndDate}`),
-        fetch(`/api/echo-pto?startDate=${weekStartDate}&endDate=${weekEndDate}`)
+        fetch(`/api/echo-pto?startDate=${weekStartDate}&endDate=${weekEndDate}`),
+        fetch(`/api/holidays?startDate=${weekStartDate}&endDate=${weekEndDate}`)
       ]);
 
       if (techsRes.ok) setEchoTechs(await techsRes.json());
       if (roomsRes.ok) setEchoRooms(await roomsRes.json());
       if (assignmentsRes.ok) setAssignments(await assignmentsRes.json());
       if (ptoRes.ok) setPtoDays(await ptoRes.json());
+      if (holidaysRes.ok) setHolidays(await holidaysRes.json());
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -387,6 +280,24 @@ export default function EchoPage() {
     }
   };
 
+  // Handle room reorder (drag and drop)
+  const handleRoomReorder = async (category: string, roomIds: string[]) => {
+    try {
+      const response = await fetch('/api/echo-rooms/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomIds })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Failed to save room order:', error);
+      }
+    } catch (error) {
+      console.error('Error saving room order:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen p-4" style={{ backgroundColor: colors.lightGray }}>
       <div className="max-w-full mx-auto">
@@ -517,53 +428,28 @@ export default function EchoPage() {
           </div>
         </div>
 
-        {/* Capacity Summary Cards */}
-        {!loading && (
-          <CapacitySummary
-            dateRange={dateRange}
-            echoTechs={echoTechs}
-            echoRooms={echoRooms}
-            assignments={assignments}
-          />
-        )}
-
-        {/* Calendar */}
-        <div className="bg-white rounded-lg shadow-sm p-4 overflow-auto max-h-[calc(100vh-320px)]">
+        {/* Schedule Grid (includes Capacity, Calendar, and Legend) */}
+        <div className="overflow-auto max-h-[calc(100vh-200px)]">
           {loading ? (
-            <div className="text-center py-8 text-gray-500">Loading schedule...</div>
+            <div className="bg-white rounded-lg shadow-sm p-4 text-center py-8 text-gray-500">
+              Loading schedule...
+            </div>
           ) : (
-            <EchoCalendar
+            <ScheduleGrid
               dateRange={dateRange}
               echoTechs={echoTechs}
               echoRooms={echoRooms}
               assignments={assignments}
               ptoDays={ptoDays}
+              holidays={holidays}
               isAdmin={isAdmin}
               onCellClick={handleCellClick}
               onPTOClick={handlePTOClick}
               collapsedCategories={collapsedCategories}
               onToggleCategory={toggleCategory}
+              onRoomReorder={handleRoomReorder}
             />
           )}
-        </div>
-
-        {/* Legend */}
-        <div className="mt-4 bg-white rounded-lg shadow-sm p-4">
-          <h3 className="text-sm font-medium mb-2">Legend</h3>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-amber-400">--</span>
-              <span className="text-gray-600">Unassigned (weekday)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-red-600">⚠️</span>
-              <span className="text-gray-600">Conflict (double-booked or PTO)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-gray-100 border"></div>
-              <span className="text-gray-600">Weekend</span>
-            </div>
-          </div>
         </div>
       </div>
 
