@@ -87,9 +87,11 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
   const [sandboxSessionId, setSandboxSessionId] = useState<string | null>(null);
 
   // Provider View filters
-  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
   const [capabilityFilter, setCapabilityFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set());
+  const [providerDropdownOpen, setProviderDropdownOpen] = useState(false);
+  const [providerSearchInDropdown, setProviderSearchInDropdown] = useState('');
 
   // Modal state
   const [selectedCell, setSelectedCell] = useState<{
@@ -216,6 +218,19 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     fetchProviderLeaves();
   }, [dateRange]);
 
+  // Close provider dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (providerDropdownOpen && !target.closest('.provider-dropdown-container')) {
+        setProviderDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [providerDropdownOpen]);
+
   // Check if a provider is on leave for a specific date
   const isProviderOnLeave = (providerId: string, date: string): boolean => {
     return providerLeaves.some(leave =>
@@ -258,13 +273,15 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
   // Filter providers for Provider View
   const filteredProviders = useMemo(() => {
     return providers.filter((p) => {
-      if (roleFilter !== 'all' && p.role !== roleFilter) return false;
+      // Filter by selected providers (if any selected)
+      if (selectedProviders.size > 0 && !selectedProviders.has(p.id)) return false;
+      // Filter by selected roles (if any selected)
+      if (selectedRoles.size > 0 && !selectedRoles.has(p.role)) return false;
+      // Filter by capability
       if (capabilityFilter !== 'all' && !p.capabilities.includes(capabilityFilter)) return false;
-      if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-          !p.initials.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
-  }, [providers, roleFilter, capabilityFilter, searchQuery]);
+  }, [providers, selectedProviders, selectedRoles, capabilityFilter]);
 
   // Get unique capabilities for filter dropdown
   const allCapabilities = useMemo(() => {
@@ -1146,24 +1163,91 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
           {/* Provider View Filters */}
           {viewMode === 'provider' && (
             <div className="flex items-center gap-3 flex-wrap">
-              <input
-                type="text"
-                placeholder="Search providers..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="px-3 py-2 border rounded text-sm w-48"
-                style={{ borderColor: colors.border }}
-              />
-              <select
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-                className="px-3 py-2 border rounded text-sm"
-                style={{ borderColor: colors.border }}
-              >
-                <option value="all">All Roles</option>
-                <option value="attending">Attending</option>
-                <option value="fellow">Fellow</option>
-              </select>
+              {/* Multi-select Provider Dropdown */}
+              <div className="relative provider-dropdown-container">
+                <button
+                  onClick={() => setProviderDropdownOpen(!providerDropdownOpen)}
+                  className="px-3 py-2 border rounded text-sm flex items-center gap-2 bg-white"
+                  style={{ borderColor: colors.border }}
+                >
+                  {selectedProviders.size === 0
+                    ? 'All Providers'
+                    : `${selectedProviders.size} selected`}
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {providerDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-64 bg-white border rounded-lg shadow-lg max-h-64 overflow-auto" style={{ borderColor: colors.border }}>
+                    {/* Search within dropdown */}
+                    <input
+                      type="text"
+                      placeholder="Search providers..."
+                      className="w-full px-3 py-2 border-b text-sm"
+                      style={{ borderColor: colors.border }}
+                      value={providerSearchInDropdown}
+                      onChange={(e) => setProviderSearchInDropdown(e.target.value)}
+                    />
+
+                    {/* Provider checkboxes */}
+                    {providers
+                      .filter(p =>
+                        !providerSearchInDropdown ||
+                        p.name.toLowerCase().includes(providerSearchInDropdown.toLowerCase()) ||
+                        p.initials.toLowerCase().includes(providerSearchInDropdown.toLowerCase())
+                      )
+                      .map(provider => (
+                        <label key={provider.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedProviders.has(provider.id)}
+                            onChange={(e) => {
+                              const next = new Set(selectedProviders);
+                              e.target.checked ? next.add(provider.id) : next.delete(provider.id);
+                              setSelectedProviders(next);
+                            }}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-sm">{provider.name} ({provider.initials})</span>
+                        </label>
+                      ))}
+
+                    {/* Clear selection button */}
+                    {selectedProviders.size > 0 && (
+                      <button
+                        onClick={() => setSelectedProviders(new Set())}
+                        className="w-full px-3 py-2 text-sm text-red-600 border-t hover:bg-gray-50"
+                        style={{ borderColor: colors.border }}
+                      >
+                        Clear selection
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Multi-select Role Checkboxes */}
+              <div className="flex items-center gap-3 px-3 py-2 border rounded bg-white" style={{ borderColor: colors.border }}>
+                <span className="text-sm text-gray-600">Roles:</span>
+                {['attending', 'fellow', 'pa', 'np'].map((role) => (
+                  <label key={role} className="flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedRoles.has(role)}
+                      onChange={(e) => {
+                        const next = new Set(selectedRoles);
+                        e.target.checked ? next.add(role) : next.delete(role);
+                        setSelectedRoles(next);
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">{role === 'pa' ? 'PA' : role === 'np' ? 'NP' : role.charAt(0).toUpperCase() + role.slice(1)}</span>
+                  </label>
+                ))}
+              </div>
+
+              {/* Capability Filter */}
               <select
                 value={capabilityFilter}
                 onChange={(e) => setCapabilityFilter(e.target.value)}
@@ -2801,17 +2885,21 @@ function ProviderView({
         {providerAssignments.map((assignment) => {
           const service = services.find((s) => s.id === assignment.service_id);
           const isPTO = service?.name === 'PTO';
+          const hasNotes = assignment.notes && assignment.notes.trim().length > 0;
           return (
             <div
               key={assignment.id}
-              className="text-xs px-1 rounded truncate"
+              className="text-xs px-1 rounded"
               style={{
                 backgroundColor: isPTO ? `${colors.ptoRed}20` : `${colors.lightBlue}20`,
                 color: isPTO ? colors.ptoRed : colors.primaryBlue,
               }}
-              title={service?.name}
+              title={hasNotes ? `${service?.name}: ${assignment.notes}` : service?.name}
             >
-              {service?.name.substring(0, 8)}
+              <span className="truncate">{service?.name.substring(0, 8)}</span>
+              {hasNotes && (
+                <span className="text-gray-500 italic ml-1">({assignment.notes})</span>
+              )}
             </div>
           );
         })}
