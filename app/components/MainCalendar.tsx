@@ -1619,7 +1619,9 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
               }),
             });
             if (res.ok) {
-              const newAssignment = await res.json();
+              const result = await res.json();
+              // API returns an array, extract the first element
+              const newAssignment = Array.isArray(result) ? result[0] : result;
               setAssignments((prev) => [...prev, newAssignment]);
               setSelectedProviderCell(null);
               setProviderAssignmentServiceSearch('');
