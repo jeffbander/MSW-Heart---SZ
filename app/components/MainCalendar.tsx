@@ -65,6 +65,29 @@ const SERVICE_CAPABILITY_MAP: Record<string, string[]> = {
   'Precepting': ['Precepting']
 };
 
+// Service abbreviations for cleaner display in Provider View
+const SERVICE_ABBREVIATIONS: Record<string, string> = {
+  'Fourth Floor Echo Lab': '4th Echo',
+  'Echo TTE': 'Echo',
+  'Echo TTE AM': 'Echo',
+  'Echo TTE PM': 'Echo',
+  'Stress Echo': 'Stress',
+  'Stress Echo AM': 'Stress',
+  'Stress Echo PM': 'Stress',
+  'Nuclear Stress': 'Nuc Stress',
+  'Provider Support': 'Support',
+  'Inpatient': 'Inpt',
+  'Precepting': 'Precept',
+  'Offsites': 'Offsite',
+  'Rooms AM': 'Rooms AM',
+  'Rooms PM': 'Rooms PM',
+};
+
+// Helper to get abbreviated service name for Provider View
+const getServiceAbbreviation = (serviceName: string): string => {
+  return SERVICE_ABBREVIATIONS[serviceName] || serviceName;
+};
+
 interface MainCalendarProps {
   isAdmin?: boolean;
 }
@@ -92,6 +115,10 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
   const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set());
   const [providerDropdownOpen, setProviderDropdownOpen] = useState(false);
   const [providerSearchInDropdown, setProviderSearchInDropdown] = useState('');
+  const [showWeekend, setShowWeekend] = useState(true);
+  const [savedViewName, setSavedViewName] = useState('');
+  const [showSaveViewModal, setShowSaveViewModal] = useState(false);
+  const [savedViews, setSavedViews] = useState<Array<{name: string; providerIds: string[]; roles: string[]; showWeekend: boolean}>>([]);
 
   // Modal state
   const [selectedCell, setSelectedCell] = useState<{
@@ -178,6 +205,26 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     return dates;
   }, [currentDate, timeFrame]);
 
+  // Compute provider view date range (reorder: Mon-Fri-Sat-Sun, optionally hide weekend)
+  const providerViewDateRange = useMemo(() => {
+    if (timeFrame !== 'week') return dateRange;
+
+    // dateRange is Sun-Mon-Tue-Wed-Thu-Fri-Sat (0-6)
+    // Reorder to Mon-Tue-Wed-Thu-Fri-Sat-Sun
+    const reordered = [
+      ...dateRange.slice(1, 6), // Mon-Fri (indices 1-5)
+      ...dateRange.slice(6),    // Sat (index 6)
+      dateRange[0],             // Sun (index 0)
+    ];
+
+    if (!showWeekend) {
+      // Return only Mon-Fri
+      return reordered.slice(0, 5);
+    }
+
+    return reordered;
+  }, [dateRange, timeFrame, showWeekend]);
+
   // Fetch data when date range changes
   useEffect(() => {
     if (dateRange.length > 0) {
@@ -230,6 +277,47 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [providerDropdownOpen]);
+
+  // Load saved provider views from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('providerViewSavedViews');
+    if (saved) {
+      try {
+        setSavedViews(JSON.parse(saved));
+      } catch (e) {
+        console.error('Error loading saved views:', e);
+      }
+    }
+  }, []);
+
+  // Save a provider view
+  const saveProviderView = (name: string) => {
+    const newView = {
+      name,
+      providerIds: Array.from(selectedProviders),
+      roles: Array.from(selectedRoles),
+      showWeekend,
+    };
+    const updated = [...savedViews.filter(v => v.name !== name), newView];
+    setSavedViews(updated);
+    localStorage.setItem('providerViewSavedViews', JSON.stringify(updated));
+    setShowSaveViewModal(false);
+    setSavedViewName('');
+  };
+
+  // Load a saved provider view
+  const loadProviderView = (view: {name: string; providerIds: string[]; roles: string[]; showWeekend: boolean}) => {
+    setSelectedProviders(new Set(view.providerIds));
+    setSelectedRoles(new Set(view.roles));
+    setShowWeekend(view.showWeekend);
+  };
+
+  // Delete a saved provider view
+  const deleteProviderView = (name: string) => {
+    const updated = savedViews.filter(v => v.name !== name);
+    setSavedViews(updated);
+    localStorage.setItem('providerViewSavedViews', JSON.stringify(updated));
+  };
 
   // Check if a provider is on leave for a specific date
   const isProviderOnLeave = (providerId: string, date: string): boolean => {
@@ -967,30 +1055,28 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
 
       {/* Controls Bar */}
       <div className="bg-white border-b px-4 py-3" style={{ borderColor: colors.border }}>
-        <div className="max-w-full mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        {/* Top Row: Time Frame Toggle + Navigation */}
+        <div className="max-w-full mx-auto flex flex-wrap items-center gap-4">
           {/* Time Frame Toggle */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium" style={{ color: colors.primaryBlue }}>View:</span>
-            <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: colors.border }}>
-              {(['day', 'week', 'month'] as TimeFrame[]).map((tf) => (
-                <button
-                  key={tf}
-                  onClick={() => setTimeFrame(tf)}
-                  className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${
-                    timeFrame === tf
-                      ? 'text-white'
-                      : 'bg-white hover:bg-gray-50'
-                  }`}
-                  style={timeFrame === tf ? { backgroundColor: colors.lightBlue, color: 'white' } : { color: colors.primaryBlue }}
-                >
-                  {tf}
-                </button>
-              ))}
-            </div>
+          <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: colors.border }}>
+            {(['day', 'week', 'month'] as TimeFrame[]).map((tf) => (
+              <button
+                key={tf}
+                onClick={() => setTimeFrame(tf)}
+                className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${
+                  timeFrame === tf
+                    ? 'text-white'
+                    : 'bg-white hover:bg-gray-50'
+                }`}
+                style={timeFrame === tf ? { backgroundColor: colors.lightBlue, color: 'white' } : { color: colors.primaryBlue }}
+              >
+                {tf}
+              </button>
+            ))}
           </div>
 
           {/* Navigation */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={navigatePrevious}
               className="px-3 py-2 rounded border hover:bg-gray-50 transition-colors"
@@ -1160,10 +1246,17 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             </div>
           )}
 
-          {/* Provider View Filters */}
-          {viewMode === 'provider' && (
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* Multi-select Provider Dropdown */}
+          {/* Spacer to push remaining items right */}
+          <div className="flex-grow" />
+        </div>
+
+        {/* Second Row: Provider View Filters (only shown in provider view) */}
+        {viewMode === 'provider' && (
+          <div className="flex items-center gap-3 flex-wrap mt-3 pt-3 border-t" style={{ borderColor: colors.border }}>
+            {/* Filter Controls Group */}
+            <span className="text-sm font-medium text-gray-500">Filters:</span>
+
+            {/* Multi-select Provider Dropdown */}
               <div className="relative provider-dropdown-container">
                 <button
                   onClick={() => setProviderDropdownOpen(!providerDropdownOpen)}
@@ -1259,18 +1352,126 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                   <option key={cap} value={cap}>{cap}</option>
                 ))}
               </select>
+
+              {/* Divider between filter and display controls */}
+              <div className="w-px h-8 bg-gray-300 mx-1" />
+
+              {/* Display Controls Group */}
+              {/* Weekend Toggle */}
+              <label className="flex items-center gap-2 px-3 py-2 border rounded bg-white cursor-pointer" style={{ borderColor: colors.border }}>
+                <input
+                  type="checkbox"
+                  checked={showWeekend}
+                  onChange={(e) => setShowWeekend(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">Weekend</span>
+              </label>
+
+              {/* Views Dropdown (combined Load/Save) */}
+              <div className="relative">
+                <select
+                  onChange={(e) => {
+                    if (e.target.value === '__save__') {
+                      setShowSaveViewModal(true);
+                    } else {
+                      const view = savedViews.find(v => v.name === e.target.value);
+                      if (view) loadProviderView(view);
+                    }
+                    e.target.value = '';
+                  }}
+                  className="px-3 py-2 border rounded text-sm bg-white"
+                  style={{ borderColor: colors.border }}
+                  defaultValue=""
+                >
+                  <option value="" disabled>Views</option>
+                  <option value="__save__">+ Save Current View</option>
+                  {savedViews.length > 0 && <option disabled>────────────</option>}
+                  {savedViews.map((view) => (
+                    <option key={view.name} value={view.name}>{view.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Clear Filters Button */}
+              {(selectedProviders.size > 0 || selectedRoles.size > 0 || capabilityFilter !== 'all') && (
+                <button
+                  onClick={() => {
+                    setSelectedProviders(new Set());
+                    setSelectedRoles(new Set());
+                    setCapabilityFilter('all');
+                  }}
+                  className="px-3 py-2 text-sm text-red-600 border border-red-200 rounded hover:bg-red-50"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
           )}
 
-          {/* Link to Provider Directory */}
-          <Link
-            href="/providers"
-            className="px-4 py-2 rounded text-sm font-medium text-white hover:opacity-90 transition-colors"
-            style={{ backgroundColor: colors.lightBlue }}
-          >
-            Provider Directory →
-          </Link>
-        </div>
+          {/* Save View Modal */}
+          {showSaveViewModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg shadow-lg p-6 w-96">
+                <h3 className="text-lg font-semibold mb-4" style={{ color: colors.primaryBlue }}>Save Current View</h3>
+                <input
+                  type="text"
+                  placeholder="View name..."
+                  value={savedViewName}
+                  onChange={(e) => setSavedViewName(e.target.value)}
+                  className="w-full px-3 py-2 border rounded mb-4"
+                  style={{ borderColor: colors.border }}
+                  autoFocus
+                />
+                <div className="text-sm text-gray-600 mb-4">
+                  This will save:
+                  <ul className="list-disc ml-5 mt-1">
+                    <li>{selectedProviders.size} selected providers</li>
+                    <li>{selectedRoles.size} selected roles</li>
+                    <li>Weekend: {showWeekend ? 'shown' : 'hidden'}</li>
+                  </ul>
+                </div>
+                {savedViews.length > 0 && (
+                  <div className="mb-4">
+                    <div className="text-sm font-medium text-gray-700 mb-2">Existing views:</div>
+                    <div className="space-y-1 max-h-32 overflow-auto">
+                      {savedViews.map((view) => (
+                        <div key={view.name} className="flex items-center justify-between text-sm bg-gray-50 px-2 py-1 rounded">
+                          <span>{view.name}</span>
+                          <button
+                            onClick={() => deleteProviderView(view.name)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      setShowSaveViewModal(false);
+                      setSavedViewName('');
+                    }}
+                    className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
+                    style={{ borderColor: colors.border }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => savedViewName.trim() && saveProviderView(savedViewName.trim())}
+                    disabled={!savedViewName.trim()}
+                    className="px-4 py-2 text-sm text-white rounded hover:opacity-90 disabled:opacity-50"
+                    style={{ backgroundColor: colors.primaryBlue }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
       </div>
 
       {/* Sandbox Mode Banner (Admin only) */}
@@ -1369,7 +1570,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             providers={filteredProviders}
             services={services}
             assignments={assignments}
-            dateRange={dateRange}
+            dateRange={providerViewDateRange}
             timeFrame={timeFrame}
             getProviderAssignments={getProviderAssignments}
             formatDate={formatDate}
@@ -2873,6 +3074,16 @@ function ProviderView({
   colors,
   holidays,
 }: ProviderViewProps) {
+  // Helper to get base service name (strip AM/PM suffix)
+  const getBaseServiceName = (serviceName: string): string => {
+    return serviceName.replace(/ (AM|PM)$/, '');
+  };
+
+  // Helper to check if service should show AM/PM separately (Rooms)
+  const shouldShowAmPmSeparately = (serviceName: string): boolean => {
+    return serviceName.startsWith('Rooms');
+  };
+
   const renderProviderCell = (provider: Provider, date: string, timeBlock?: string) => {
     const providerAssignments = getProviderAssignments(provider.id, date, timeBlock);
 
@@ -2880,26 +3091,127 @@ function ProviderView({
       return <span className="text-gray-400">-</span>;
     }
 
+    // If timeBlock is specified (day view), show all assignments with abbreviations
+    if (timeBlock) {
+      return (
+        <div className="space-y-1">
+          {providerAssignments.map((assignment) => {
+            const service = services.find((s) => s.id === assignment.service_id);
+            const isPTO = service?.name === 'PTO';
+            const hasNotes = assignment.notes && assignment.notes.trim().length > 0;
+            const displayName = service ? getServiceAbbreviation(service.name) : '';
+            return (
+              <div
+                key={assignment.id}
+                className="text-xs px-2 py-0.5 rounded"
+                style={{
+                  backgroundColor: isPTO ? `${colors.ptoRed}20` : `${colors.lightBlue}20`,
+                  color: isPTO ? colors.ptoRed : colors.primaryBlue,
+                }}
+                title={hasNotes ? `${service?.name}: ${assignment.notes}` : service?.name}
+              >
+                <span>{displayName}</span>
+                {hasNotes && <span className="text-gray-500 ml-1">*</span>}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // Week/month view: show services with AM/PM indicator
+    const consolidatedServices: Array<{
+      displayName: string;
+      timeIndicator: 'AM' | 'PM' | null; // null = full day or already has AM/PM in name
+      isPTO: boolean;
+      notes: string | null;
+      key: string;
+    }> = [];
+    const serviceTimeBlocks = new Map<string, Set<string>>(); // base name -> set of time blocks
+
+    // First pass: collect time blocks per base service
+    providerAssignments.forEach((assignment) => {
+      const service = services.find((s) => s.id === assignment.service_id);
+      if (!service) return;
+
+      const serviceName = service.name;
+      const baseName = getBaseServiceName(serviceName);
+      const timeBlock = serviceName.endsWith(' AM') ? 'AM' : serviceName.endsWith(' PM') ? 'PM' : 'FULL';
+
+      if (!serviceTimeBlocks.has(baseName)) {
+        serviceTimeBlocks.set(baseName, new Set());
+      }
+      serviceTimeBlocks.get(baseName)!.add(timeBlock);
+    });
+
+    const seenBaseNames = new Set<string>();
+
+    providerAssignments.forEach((assignment) => {
+      const service = services.find((s) => s.id === assignment.service_id);
+      if (!service) return;
+
+      const serviceName = service.name;
+      const baseName = getBaseServiceName(serviceName);
+      const isPTO = serviceName === 'PTO';
+
+      // For Rooms, always show separately with AM/PM (already in name)
+      if (shouldShowAmPmSeparately(serviceName)) {
+        consolidatedServices.push({
+          displayName: getServiceAbbreviation(serviceName),
+          timeIndicator: null,
+          isPTO,
+          notes: assignment.notes,
+          key: assignment.id,
+        });
+        return;
+      }
+
+      // For other services, only show once per base name
+      if (!seenBaseNames.has(baseName)) {
+        seenBaseNames.add(baseName);
+
+        // Determine time indicator
+        const timeBlocks = serviceTimeBlocks.get(baseName);
+        let timeIndicator: 'AM' | 'PM' | null = null;
+
+        if (timeBlocks) {
+          if (timeBlocks.has('FULL') || (timeBlocks.has('AM') && timeBlocks.has('PM'))) {
+            // Full day assignment - no indicator needed
+            timeIndicator = null;
+          } else if (timeBlocks.has('AM')) {
+            timeIndicator = 'AM';
+          } else if (timeBlocks.has('PM')) {
+            timeIndicator = 'PM';
+          }
+        }
+
+        consolidatedServices.push({
+          displayName: getServiceAbbreviation(baseName),
+          timeIndicator,
+          isPTO,
+          notes: assignment.notes,
+          key: assignment.id,
+        });
+      }
+    });
+
     return (
-      <div className="space-y-0.5">
-        {providerAssignments.map((assignment) => {
-          const service = services.find((s) => s.id === assignment.service_id);
-          const isPTO = service?.name === 'PTO';
-          const hasNotes = assignment.notes && assignment.notes.trim().length > 0;
+      <div className="space-y-1">
+        {consolidatedServices.map((item) => {
+          const hasNotes = item.notes && item.notes.trim().length > 0;
           return (
             <div
-              key={assignment.id}
-              className="text-xs px-1 rounded"
+              key={item.key}
+              className="text-xs px-2 py-0.5 rounded whitespace-nowrap"
               style={{
-                backgroundColor: isPTO ? `${colors.ptoRed}20` : `${colors.lightBlue}20`,
-                color: isPTO ? colors.ptoRed : colors.primaryBlue,
+                backgroundColor: item.isPTO ? `${colors.ptoRed}20` : `${colors.lightBlue}20`,
+                color: item.isPTO ? colors.ptoRed : colors.primaryBlue,
               }}
-              title={hasNotes ? `${service?.name}: ${assignment.notes}` : service?.name}
+              title={hasNotes ? `${item.displayName}: ${item.notes}` : item.displayName}
             >
-              <span className="truncate">{service?.name.substring(0, 8)}</span>
-              {hasNotes && (
-                <span className="text-gray-500 italic ml-1">({assignment.notes})</span>
-              )}
+              <span>{item.displayName}</span>
+              {item.timeIndicator && <span className="text-gray-500 ml-1">{item.timeIndicator}</span>}
+              {hasNotes && <span className="text-gray-500 ml-1">*</span>}
             </div>
           );
         })}
@@ -2979,7 +3291,7 @@ function ProviderView({
                 return (
                   <th
                     key={date}
-                    className="border px-2 py-2 min-w-[100px]"
+                    className="border px-3 py-3 min-w-[120px]"
                     style={{
                       backgroundColor: holiday ? colors.holidayBgLight : colors.lightGray,
                       borderColor: colors.border,
@@ -3031,7 +3343,7 @@ function ProviderView({
                   return (
                     <td
                       key={date}
-                      className="border px-1 py-1"
+                      className="border px-2 py-2"
                       style={{
                         borderColor: colors.border,
                         backgroundColor: holiday ? colors.holidayBgLight : undefined,

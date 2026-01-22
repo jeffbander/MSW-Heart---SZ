@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTemplate, Holiday } from '@/lib/types';
 import { ScheduleGrid } from '@/components/schedule-grid';
 import EchoAssignmentModal from '@/app/components/EchoAssignmentModal';
+import { useAdmin } from '@/app/contexts/AdminContext';
+import PasscodeModal from '@/app/components/layout/PasscodeModal';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -31,8 +33,11 @@ export default function EchoPage() {
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Admin state
+  const { isAdminMode, authenticate, logout } = useAdmin();
+  const [showPasscodeModal, setShowPasscodeModal] = useState(false);
+
   // UI state
-  const [isAdmin, setIsAdmin] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
 
   // Modal state
@@ -128,10 +133,10 @@ export default function EchoPage() {
   };
 
   useEffect(() => {
-    if (isAdmin) {
+    if (isAdminMode) {
       fetchTemplates();
     }
-  }, [isAdmin]);
+  }, [isAdminMode]);
 
   // Format week label
   const formatWeekLabel = () => {
@@ -318,17 +323,18 @@ export default function EchoPage() {
 
           {/* Admin Toggle */}
           <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isAdmin}
-                onChange={(e) => setIsAdmin(e.target.checked)}
-                className="w-4 h-4"
-              />
-              <span className="text-sm font-medium">Admin Mode</span>
-            </label>
+            <button
+              onClick={() => isAdminMode ? logout() : setShowPasscodeModal(true)}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                isAdminMode
+                  ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {isAdminMode ? 'Exit Admin' : 'Admin Mode'}
+            </button>
 
-            {isAdmin && (
+            {isAdminMode && (
               <>
                 {/* Templates Dropdown */}
                 <div className="relative">
@@ -442,7 +448,7 @@ export default function EchoPage() {
               assignments={assignments}
               ptoDays={ptoDays}
               holidays={holidays}
-              isAdmin={isAdmin}
+              isAdmin={isAdminMode}
               onCellClick={handleCellClick}
               onPTOClick={handlePTOClick}
               collapsedCategories={collapsedCategories}
@@ -543,6 +549,13 @@ export default function EchoPage() {
           </div>
         </div>
       )}
+
+      {/* Passcode Modal */}
+      <PasscodeModal
+        isOpen={showPasscodeModal}
+        onClose={() => setShowPasscodeModal(false)}
+        onAuthenticate={authenticate}
+      />
 
       {/* Close dropdown when clicking outside */}
       {showTemplateDropdown && (
