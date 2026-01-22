@@ -12,6 +12,7 @@ import PTOConflictModal from './PTOConflictModal';
 import EditAssignmentModal from './calendar/EditAssignmentModal';
 import DayMetadataModal from './DayMetadataModal';
 import BulkScheduleModal from './calendar/BulkScheduleModal';
+import UndoHistoryModal from './admin/UndoHistoryModal';
 
 // Helper to format date in local timezone (avoids UTC conversion issues)
 function formatLocalDate(date: Date): string {
@@ -144,6 +145,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
   const [showAlternatingModal, setShowAlternatingModal] = useState(false);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
   const [showBulkScheduleModal, setShowBulkScheduleModal] = useState(false);
+  const [showUndoHistoryModal, setShowUndoHistoryModal] = useState(false);
 
   // Provider search in assignment modal
   const [providerSearchQuery, setProviderSearchQuery] = useState('');
@@ -433,7 +435,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && timeBlock === 'PM';
     const maxGreen = isExtendedDay ? 15 : 14;
 
-    if (current < 12) return '#EAB308'; // Yellow - under-staffed
+    if (current < 13) return '#EAB308'; // Yellow - under-staffed
     if (current <= maxGreen) return '#22C55E'; // Green - optimal
     return '#EF4444'; // Red - over capacity
   };
@@ -1215,6 +1217,21 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
               title="Add or remove a provider from recurring schedule"
             >
               Bulk Schedule
+            </button>
+          )}
+
+          {/* Undo Changes Button (Admin only) */}
+          {isAdmin && (
+            <button
+              onClick={() => setShowUndoHistoryModal(true)}
+              className="px-3 py-2 rounded text-sm font-medium border hover:bg-gray-50 transition-colors flex items-center gap-1"
+              style={{ borderColor: colors.border, color: colors.primaryBlue }}
+              title="View and undo recent schedule changes"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              Undo
             </button>
           )}
 
@@ -2075,6 +2092,12 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
               }}
             />
           )}
+
+          <UndoHistoryModal
+            isOpen={showUndoHistoryModal}
+            onClose={() => setShowUndoHistoryModal(false)}
+            onActionComplete={() => fetchData()}
+          />
         </>
       )}
 
@@ -2240,7 +2263,7 @@ function ServiceView({
     const maxGreen = isExtendedDay ? 15 : 14;
 
     if (current === 0) return '#FFEDD5'; // Light orange - empty, needs coverage urgently
-    if (current < 12) return '#FEF3C7'; // Light yellow - under-staffed
+    if (current < 13) return '#FEF3C7'; // Light yellow - under-staffed
     if (current <= maxGreen) return '#D1FAE5'; // Light green - optimal
     return '#FEE2E2'; // Light red - over capacity
   };
@@ -2458,7 +2481,7 @@ function ServiceView({
 
       // For weekends, use neutral styling (no coverage colors or suggestions)
       const bgColor = isWeekend ? undefined : getRoomCapacityBgColor(current, date, row.timeBlock);
-      const textColor = isWeekend ? colors.primaryBlue : (current === 0 ? '#9CA3AF' : current < 12 ? '#D97706' : current <= maxGreen ? '#059669' : '#DC2626');
+      const textColor = isWeekend ? colors.primaryBlue : (current === 0 ? '#9CA3AF' : current < 13 ? '#D97706' : current <= maxGreen ? '#059669' : '#DC2626');
 
       // Get room suggestions if under target (only for weekdays)
       const cellAssignments = getAssignmentsForCell(row.serviceId, date, row.timeBlock);
@@ -2873,7 +2896,7 @@ function ServiceView({
                 const dayOfWeek = new Date(date + 'T00:00:00').getDay();
                 const isExtendedDay = (dayOfWeek === 3 || dayOfWeek === 4) && row.timeBlock === 'PM';
                 const maxGreen = isExtendedDay ? 15 : 14;
-                const textColor = current === 0 ? '#9CA3AF' : current < 12 ? '#D97706' : current <= maxGreen ? '#059669' : '#DC2626';
+                const textColor = current === 0 ? '#9CA3AF' : current < 13 ? '#D97706' : current <= maxGreen ? '#059669' : '#DC2626';
 
                 return (
                   <tr key={row.name} className="hover:bg-gray-50">

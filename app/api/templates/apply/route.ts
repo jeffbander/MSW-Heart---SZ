@@ -24,6 +24,16 @@ function getDateRange(startDate: string, endDate: string): string[] {
   return dates;
 }
 
+interface PTOConflict {
+  provider_id: string;
+  provider_name?: string;
+  date: string;
+  time_block: string;
+  intended_service_id: string;
+  intended_service_name?: string;
+  reason: string;
+}
+
 // POST - Apply template to date range
 export async function POST(request: Request) {
   try {
@@ -40,12 +50,26 @@ export async function POST(request: Request) {
     const clearExisting = options?.clearExisting ?? false;
     const skipConflicts = options?.skipConflicts ?? true;
 
+    // Fetch template with its name
+    const { data: templateData, error: templateFetchError } = await supabase
+      .from('schedule_templates')
+      .select('name')
+      .eq('id', templateId)
+      .single();
+
+    if (templateFetchError) {
+      console.error('Error fetching template:', templateFetchError);
+    }
+
+    const templateName = templateData?.name || 'Unknown Template';
+
     // Fetch template assignments
     const { data: templateAssignments, error: templateError } = await supabase
       .from('template_assignments')
       .select(`
         *,
-        service:services(name)
+        service:services(id, name),
+        provider:providers(id, name, initials)
       `)
       .eq('template_id', templateId);
 
@@ -61,6 +85,31 @@ export async function POST(request: Request) {
     // Get all dates in range
     const dates = getDateRange(startDate, endDate);
 
+    // Fetch existing PTO assignments in the date range
+    const { data: ptoAssignments, error: ptoError } = await supabase
+      .from('schedule_assignments')
+      .select('provider_id, date, time_block')
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .eq('is_pto', true);
+
+    if (ptoError) {
+      console.error('Error fetching PTO assignments:', ptoError);
+    }
+
+    // Build PTO lookup map: "providerId-date-timeBlock" -> true
+    // Also handle BOTH time block - if someone has PTO for BOTH, they're unavailable for AM and PM
+    const ptoMap = new Set<string>();
+    (ptoAssignments || []).forEach(p => {
+      if (p.time_block === 'BOTH') {
+        ptoMap.add(`${p.provider_id}-${p.date}-AM`);
+        ptoMap.add(`${p.provider_id}-${p.date}-PM`);
+        ptoMap.add(`${p.provider_id}-${p.date}-BOTH`);
+      } else {
+        ptoMap.add(`${p.provider_id}-${p.date}-${p.time_block}`);
+      }
+    });
+
     // Group template assignments by day_of_week
     const assignmentsByDay = new Map<number, typeof templateAssignments>();
     templateAssignments.forEach((ta) => {
@@ -69,8 +118,20 @@ export async function POST(request: Request) {
       assignmentsByDay.set(ta.day_of_week, existing);
     });
 
-    // If clearExisting, delete all assignments in the date range first
+    // Store deleted assignments for undo capability
+    let deletedAssignments: any[] = [];
+
+    // If clearExisting, capture and delete all assignments in the date range first
     if (clearExisting) {
+      // First fetch existing assignments for undo
+      const { data: existingToDelete } = await supabase
+        .from('schedule_assignments')
+        .select('*')
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+      deletedAssignments = existingToDelete || [];
+
       const { error: deleteError } = await supabase
         .from('schedule_assignments')
         .delete()
@@ -84,6 +145,7 @@ export async function POST(request: Request) {
     const assignmentsToCreate: any[] = [];
     const skipped: string[] = [];
     const holidayConflicts: string[] = [];
+    const ptoConflicts: PTOConflict[] = [];
 
     for (const date of dates) {
       const dateObj = new Date(date + 'T00:00:00');
@@ -96,6 +158,21 @@ export async function POST(request: Request) {
         if (holiday && !isInpatientService(ta.service?.name || '')) {
           holidayConflicts.push(`${date}: ${holiday.name} (${ta.service?.name || 'Unknown'})`);
           continue;
+        }
+
+        // Check for PTO conflicts - skip if provider has PTO
+        const ptoKey = `${ta.provider_id}-${date}-${ta.time_block}`;
+        if (ptoMap.has(ptoKey)) {
+          ptoConflicts.push({
+            provider_id: ta.provider_id,
+            provider_name: ta.provider?.name || ta.provider?.initials,
+            date: date,
+            time_block: ta.time_block,
+            intended_service_id: ta.service_id,
+            intended_service_name: ta.service?.name,
+            reason: 'Provider has PTO'
+          });
+          continue; // Skip this assignment
         }
 
         assignmentsToCreate.push({
@@ -116,6 +193,8 @@ export async function POST(request: Request) {
         created: 0,
         skipped: skipped.length,
         holidayConflicts,
+        ptoConflicts,
+        coverageNeeded: ptoConflicts.length,
         message: 'No assignments to create',
       });
     }
@@ -153,6 +232,8 @@ export async function POST(request: Request) {
         created: 0,
         skipped: skipped.length,
         holidayConflicts,
+        ptoConflicts,
+        coverageNeeded: ptoConflicts.length,
         message: 'All assignments already exist',
       });
     }
@@ -169,11 +250,44 @@ export async function POST(request: Request) {
 
     if (insertError) throw insertError;
 
+    // Record this operation in change history for undo capability
+    const createdIds = (data || []).map(a => a.id);
+
+    const { data: historyRecord, error: historyError } = await supabase
+      .from('schedule_change_history')
+      .insert({
+        operation_type: 'template_apply',
+        operation_description: `Applied "${templateName}" to ${startDate} - ${endDate}`,
+        affected_date_start: startDate,
+        affected_date_end: endDate,
+        deleted_assignments: deletedAssignments.length > 0 ? deletedAssignments : null,
+        created_assignment_ids: createdIds,
+        redo_assignments: finalAssignments,
+        metadata: {
+          template_id: templateId,
+          template_name: templateName,
+          clear_existing: clearExisting,
+          skip_conflicts: skipConflicts,
+          pto_conflicts_count: ptoConflicts.length,
+          holiday_conflicts_count: holidayConflicts.length
+        }
+      })
+      .select()
+      .single();
+
+    if (historyError) {
+      console.error('Error recording change history:', historyError);
+      // Don't fail the whole operation if history recording fails
+    }
+
     return NextResponse.json({
       success: true,
       created: data?.length || 0,
       skipped: skipped.length,
       holidayConflicts,
+      ptoConflicts,
+      coverageNeeded: ptoConflicts.length,
+      historyId: historyRecord?.id,
       data,
     });
   } catch (error) {
