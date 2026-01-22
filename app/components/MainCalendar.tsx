@@ -127,6 +127,15 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     timeBlock: string;
   } | null>(null);
 
+  // Provider View assignment modal state
+  const [selectedProviderCell, setSelectedProviderCell] = useState<{
+    providerId: string;
+    providerName: string;
+    date: string;
+    timeBlock: string;
+  } | null>(null);
+  const [providerAssignmentServiceSearch, setProviderAssignmentServiceSearch] = useState('');
+
   // Holidays
   const [holidays, setHolidays] = useState<Map<string, Holiday>>(new Map());
 
@@ -1578,11 +1587,154 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             isFullDayService={isFullDayService}
             colors={colors}
             holidays={holidays}
+            onCellClick={(providerId, providerName, date, timeBlock) => {
+              setSelectedProviderCell({ providerId, providerName, date, timeBlock });
+              setProviderAssignmentServiceSearch('');
+            }}
+            isAdmin={isAdmin}
           />
         )}
       </main>
 
-      {/* Provider Assignment Modal */}
+      {/* Provider View Assignment Modal - Add assignment from Provider View */}
+      {selectedProviderCell && (() => {
+        const provider = providers.find((p) => p.id === selectedProviderCell.providerId);
+        const filteredServices = services.filter((s) =>
+          s.name !== 'PTO' && // Don't show PTO in quick add
+          (providerAssignmentServiceSearch === '' ||
+            s.name.toLowerCase().includes(providerAssignmentServiceSearch.toLowerCase()))
+        );
+
+        const handleAddFromProviderView = async (serviceId: string, timeBlock: string, notes?: string) => {
+          try {
+            const res = await fetch('/api/assignments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                provider_id: selectedProviderCell.providerId,
+                service_id: serviceId,
+                date: selectedProviderCell.date,
+                time_block: timeBlock,
+                notes: notes || null,
+              }),
+            });
+            if (res.ok) {
+              const newAssignment = await res.json();
+              setAssignments((prev) => [...prev, newAssignment]);
+              setSelectedProviderCell(null);
+              setProviderAssignmentServiceSearch('');
+            } else {
+              const error = await res.json();
+              alert(error.error || 'Failed to create assignment');
+            }
+          } catch (err) {
+            console.error('Failed to create assignment:', err);
+            alert('Failed to create assignment');
+          }
+        };
+
+        return (
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            onClick={() => { setSelectedProviderCell(null); setProviderAssignmentServiceSearch(''); }}
+          >
+            <div
+              className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="px-4 py-3 border-b" style={{ borderColor: colors.border, backgroundColor: colors.lightGray }}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold" style={{ color: colors.primaryBlue }}>
+                    Add Assignment
+                  </h3>
+                  <button
+                    onClick={() => { setSelectedProviderCell(null); setProviderAssignmentServiceSearch(''); }}
+                    className="text-gray-500 hover:text-gray-700 text-xl leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="text-sm text-gray-600 mt-1">
+                  <span className="font-medium">{provider?.name}</span> • {formatDate(selectedProviderCell.date)}
+                  {selectedProviderCell.timeBlock !== 'BOTH' && ` • ${selectedProviderCell.timeBlock}`}
+                </div>
+              </div>
+
+              {/* Time Block Selector (for week view) */}
+              {selectedProviderCell.timeBlock === 'BOTH' && (
+                <div className="px-4 py-3 border-b" style={{ borderColor: colors.border }}>
+                  <div className="text-sm font-medium text-gray-700 mb-2">Select Time Block:</div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedProviderCell({ ...selectedProviderCell, timeBlock: 'AM' })}
+                      className="flex-1 px-3 py-2 rounded border text-sm font-medium hover:bg-blue-50"
+                      style={{ borderColor: colors.lightBlue, color: colors.lightBlue }}
+                    >
+                      AM Only
+                    </button>
+                    <button
+                      onClick={() => setSelectedProviderCell({ ...selectedProviderCell, timeBlock: 'PM' })}
+                      className="flex-1 px-3 py-2 rounded border text-sm font-medium hover:bg-blue-50"
+                      style={{ borderColor: colors.lightBlue, color: colors.lightBlue }}
+                    >
+                      PM Only
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Search Box */}
+              <div className="px-4 py-3 border-b" style={{ borderColor: colors.border }}>
+                <input
+                  type="text"
+                  placeholder="Search services..."
+                  value={providerAssignmentServiceSearch}
+                  onChange={(e) => setProviderAssignmentServiceSearch(e.target.value)}
+                  className="w-full px-3 py-2 border rounded text-sm"
+                  style={{ borderColor: colors.border }}
+                  autoFocus
+                />
+              </div>
+
+              {/* Service List */}
+              <div className="flex-1 overflow-auto px-4 py-2">
+                {filteredServices.length === 0 ? (
+                  <div className="text-center text-gray-500 py-4">No services found</div>
+                ) : (
+                  <div className="space-y-1">
+                    {filteredServices.map((service) => (
+                      <button
+                        key={service.id}
+                        onClick={() => handleAddFromProviderView(service.id, selectedProviderCell.timeBlock === 'BOTH' ? 'AM' : selectedProviderCell.timeBlock)}
+                        className="w-full text-left px-3 py-2 rounded hover:bg-blue-50 text-sm flex items-center justify-between group"
+                      >
+                        <span style={{ color: colors.primaryBlue }}>{service.name}</span>
+                        <span className="text-xs text-gray-400 group-hover:text-gray-600">
+                          Click to add
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-4 py-3 border-t bg-gray-50" style={{ borderColor: colors.border }}>
+                <button
+                  onClick={() => { setSelectedProviderCell(null); setProviderAssignmentServiceSearch(''); }}
+                  className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-100"
+                  style={{ borderColor: colors.border }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Service View Assignment Modal */}
       {selectedCell && (() => {
         const service = services.find((s) => s.id === selectedCell.serviceId);
         const cellAssignments = getAssignmentsForCell(
@@ -3060,6 +3212,8 @@ interface ProviderViewProps {
   isFullDayService: (serviceName: string) => boolean;
   colors: typeof colors;
   holidays: Map<string, Holiday>;
+  onCellClick?: (providerId: string, providerName: string, date: string, timeBlock: string) => void;
+  isAdmin?: boolean;
 }
 
 function ProviderView({
@@ -3073,6 +3227,8 @@ function ProviderView({
   isFullDayService,
   colors,
   holidays,
+  onCellClick,
+  isAdmin,
 }: ProviderViewProps) {
   // Helper to get base service name (strip AM/PM suffix)
   const getBaseServiceName = (serviceName: string): string => {
@@ -3260,10 +3416,18 @@ function ProviderView({
                     <div className="text-xs text-gray-600">{provider.name}</div>
                   </Link>
                 </td>
-                <td className="border px-2 py-2" style={{ borderColor: colors.border }}>
+                <td
+                  className={`border px-2 py-2 ${isAdmin && onCellClick ? 'cursor-pointer hover:bg-blue-50' : ''}`}
+                  style={{ borderColor: colors.border }}
+                  onClick={() => isAdmin && onCellClick && onCellClick(provider.id, provider.name, date, 'AM')}
+                >
                   {renderProviderCell(provider, date, 'AM')}
                 </td>
-                <td className="border px-2 py-2" style={{ borderColor: colors.border }}>
+                <td
+                  className={`border px-2 py-2 ${isAdmin && onCellClick ? 'cursor-pointer hover:bg-blue-50' : ''}`}
+                  style={{ borderColor: colors.border }}
+                  onClick={() => isAdmin && onCellClick && onCellClick(provider.id, provider.name, date, 'PM')}
+                >
                   {renderProviderCell(provider, date, 'PM')}
                 </td>
               </tr>
@@ -3343,11 +3507,12 @@ function ProviderView({
                   return (
                     <td
                       key={date}
-                      className="border px-2 py-2"
+                      className={`border px-2 py-2 ${isAdmin && onCellClick && !holiday ? 'cursor-pointer hover:bg-blue-50' : ''}`}
                       style={{
                         borderColor: colors.border,
                         backgroundColor: holiday ? colors.holidayBgLight : undefined,
                       }}
+                      onClick={() => isAdmin && onCellClick && !holiday && onCellClick(provider.id, provider.name, date, 'BOTH')}
                     >
                       {holiday ? (
                         <div className="text-xs font-medium text-center" style={{ color: colors.holidayPurple }}>
