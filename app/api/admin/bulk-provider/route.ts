@@ -150,7 +150,7 @@ export async function POST(request: Request) {
       }
 
       const affectedCount = filteredAssignments.length;
-      const affectedAssignments: AffectedAssignment[] = filteredAssignments.map(a => ({
+      const affectedAssignments: AffectedAssignment[] = filteredAssignments.map((a: any) => ({
         id: a.id,
         date: a.date,
         time_block: a.time_block,
