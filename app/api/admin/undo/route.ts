@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       const createdIdSet = new Set(createdIds);
       const restoredIdSet = new Set(deletedAssignments.map(a => a.id));
 
-      for (const assignment of rangeAssignments || []) {
+      for (const assignment of (rangeAssignments || []) as any[]) {
         // If this assignment wasn't created by the operation and wasn't previously deleted
         if (!createdIdSet.has(assignment.id) && !restoredIdSet.has(assignment.id)) {
           // This is a new assignment added after the operation
