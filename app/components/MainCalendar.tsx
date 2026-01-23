@@ -187,6 +187,14 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     timeBlock: 'AM' | 'PM';
   } | null>(null);
 
+  // Add PTO form state
+  const [showAddPTOForm, setShowAddPTOForm] = useState(false);
+  const [addPTOProvider, setAddPTOProvider] = useState<string>('');
+  const [addPTOEndDate, setAddPTOEndDate] = useState<string>('');
+  const [addPTOTimeBlock, setAddPTOTimeBlock] = useState<'AM' | 'PM' | 'FULL'>('FULL');
+  const [addPTOLeaveType, setAddPTOLeaveType] = useState<string>('vacation');
+  const [addPTOProviderSearch, setAddPTOProviderSearch] = useState('');
+
   // Calculate date range based on time frame
   const dateRange = useMemo(() => {
     const dates: string[] = [];
@@ -441,7 +449,14 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
   };
 
   // Get PTO time blocks for a provider on a specific date
+  // Skip weekends - PTO doesn't apply to Sat/Sun
   const getProviderPTOForDate = (providerId: string, date: string): string[] => {
+    // Check if date is a weekend (Saturday=6, Sunday=0)
+    const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return []; // No PTO on weekends
+    }
+
     const ptoAssignments = assignments.filter(a =>
       a.provider_id === providerId &&
       a.date === date &&
@@ -936,6 +951,83 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
       }
     } catch (error) {
       console.error('Error removing assignment:', error);
+    }
+  };
+
+  // Remove PTO from all related tables (schedule_assignments, pto_requests, provider_leaves)
+  const handleRemovePTO = async (providerId: string, date: string, timeBlock: string) => {
+    if (!confirm('Are you sure you want to remove this PTO? This will also update the PTO request and leave records.')) {
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        providerId,
+        date,
+        timeBlock,
+      });
+
+      const response = await fetch(`/api/pto/delete?${params.toString()}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        await fetchData();
+        // Refresh provider leaves too
+        const leavesResponse = await fetch(
+          `/api/leaves?startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`
+        );
+        const leavesData = await leavesResponse.json();
+        setProviderLeaves(Array.isArray(leavesData) ? leavesData : []);
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to remove PTO');
+      }
+    } catch (error) {
+      console.error('Error removing PTO:', error);
+      alert('Failed to remove PTO. Please try again.');
+    }
+  };
+
+  // Add PTO for a provider
+  const handleAddPTO = async (
+    providerId: string,
+    startDate: string,
+    endDate: string,
+    timeBlock: 'AM' | 'PM' | 'FULL',
+    leaveType: string = 'vacation'
+  ) => {
+    try {
+      const response = await fetch('/api/pto/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider_id: providerId,
+          start_date: startDate,
+          end_date: endDate,
+          time_block: timeBlock,
+          leave_type: leaveType,
+        }),
+      });
+
+      if (response.ok) {
+        await fetchData();
+        // Refresh provider leaves too
+        const leavesResponse = await fetch(
+          `/api/leaves?startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`
+        );
+        const leavesData = await leavesResponse.json();
+        setProviderLeaves(Array.isArray(leavesData) ? leavesData : []);
+        return true;
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to add PTO');
+        return false;
+      }
+    } catch (error) {
+      console.error('Error adding PTO:', error);
+      alert('Failed to add PTO. Please try again.');
+      return false;
     }
   };
 
@@ -1774,7 +1866,15 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
         return (
           <div
             className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30"
-            onClick={() => { setSelectedCell(null); setProviderSearchQuery(''); setIsCoveringAssignment(false); }}
+            onClick={() => {
+              setSelectedCell(null);
+              setProviderSearchQuery('');
+              setIsCoveringAssignment(false);
+              setShowAddPTOForm(false);
+              setAddPTOProvider('');
+              setAddPTOEndDate('');
+              setAddPTOProviderSearch('');
+            }}
           >
             <div
               className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-auto"
@@ -1792,31 +1892,49 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                 <div className="mb-6">
                   <h3 className="font-semibold mb-2 text-sm">Currently Assigned:</h3>
                   <div className="space-y-2">
-                    {cellAssignments.map((assignment) => (
-                      <div
-                        key={assignment.id}
-                        className="flex items-center justify-between rounded px-3 py-2"
-                        style={{ backgroundColor: `${colors.lightBlue}15`, border: `1px solid ${colors.lightBlue}40` }}
-                      >
-                        <div>
-                          <span className="font-medium">
-                            {assignment.provider?.initials} - {assignment.provider?.name}
-                          </span>
-                          {service?.requires_rooms && (
-                            <span className="text-sm ml-2" style={{ color: colors.teal }}>
-                              ({assignment.room_count} rooms)
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => handleRemoveAssignment(assignment.id)}
-                          className="font-bold px-2 hover:opacity-70"
-                          style={{ color: colors.ptoRed }}
+                    {cellAssignments.map((assignment) => {
+                      const isPTOAssignment = assignment.is_pto || service?.name === 'PTO';
+
+                      return (
+                        <div
+                          key={assignment.id}
+                          className="flex items-center justify-between rounded px-3 py-2"
+                          style={{
+                            backgroundColor: isPTOAssignment ? `${colors.ptoRed}15` : `${colors.lightBlue}15`,
+                            border: `1px solid ${isPTOAssignment ? colors.ptoRed : colors.lightBlue}40`
+                          }}
                         >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
+                          <div>
+                            <span className="font-medium">
+                              {assignment.provider?.initials} - {assignment.provider?.name}
+                            </span>
+                            {isPTOAssignment && (
+                              <span className="text-xs ml-2 px-1.5 py-0.5 rounded" style={{ backgroundColor: `${colors.ptoRed}20`, color: colors.ptoRed }}>
+                                PTO
+                              </span>
+                            )}
+                            {service?.requires_rooms && !isPTOAssignment && (
+                              <span className="text-sm ml-2" style={{ color: colors.teal }}>
+                                ({assignment.room_count} rooms)
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (isPTOAssignment && assignment.provider_id) {
+                                handleRemovePTO(assignment.provider_id, selectedCell.date, selectedCell.timeBlock);
+                              } else {
+                                handleRemoveAssignment(assignment.id);
+                              }
+                            }}
+                            className="font-bold px-2 hover:opacity-70"
+                            style={{ color: colors.ptoRed }}
+                          >
+                            {isPTOAssignment ? 'Delete PTO' : 'Remove'}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                   {service?.requires_rooms && (
                     <div className="mt-2 text-sm font-semibold" style={{ color: colors.teal }}>
@@ -2037,8 +2155,165 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                 </p>
               )}
 
+              {/* Add PTO Section - Only show for admins and not on PTO row (PTO row already shows PTO assignments) */}
+              {isAdmin && service?.name !== 'PTO' && (() => {
+                const dayOfWeekCheck = new Date(selectedCell.date + 'T00:00:00').getDay();
+                const isWeekendDay = dayOfWeekCheck === 0 || dayOfWeekCheck === 6;
+
+                // Don't show Add PTO on weekends
+                if (isWeekendDay) return null;
+
+                return (
+                  <div className="mt-6 pt-4 border-t" style={{ borderColor: colors.border }}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold text-sm" style={{ color: colors.ptoRed }}>Add PTO</h3>
+                      <button
+                        onClick={() => setShowAddPTOForm(!showAddPTOForm)}
+                        className="text-sm px-3 py-1 rounded border hover:bg-gray-50"
+                        style={{ borderColor: colors.border }}
+                      >
+                        {showAddPTOForm ? 'Cancel' : 'Add PTO for Provider'}
+                      </button>
+                    </div>
+
+                    {showAddPTOForm && (
+                      <div className="p-3 rounded" style={{ backgroundColor: `${colors.ptoRed}08`, border: `1px solid ${colors.ptoRed}30` }}>
+                        {/* Provider selection */}
+                        <div className="mb-3">
+                          <label className="block text-sm font-medium mb-1">Provider</label>
+                          <input
+                            type="text"
+                            placeholder="Search provider..."
+                            value={addPTOProviderSearch}
+                            onChange={(e) => setAddPTOProviderSearch(e.target.value)}
+                            className="w-full px-3 py-2 border rounded text-sm mb-2"
+                            style={{ borderColor: colors.border }}
+                          />
+                          <div className="max-h-32 overflow-auto border rounded" style={{ borderColor: colors.border }}>
+                            {providers
+                              .filter(p =>
+                                addPTOProviderSearch === '' ||
+                                p.name.toLowerCase().includes(addPTOProviderSearch.toLowerCase()) ||
+                                p.initials.toLowerCase().includes(addPTOProviderSearch.toLowerCase())
+                              )
+                              .map(p => (
+                                <button
+                                  key={p.id}
+                                  onClick={() => {
+                                    setAddPTOProvider(p.id);
+                                    setAddPTOProviderSearch(p.initials + ' - ' + p.name);
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 ${addPTOProvider === p.id ? 'bg-gray-100 font-medium' : ''}`}
+                                >
+                                  {p.initials} - {p.name}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        </div>
+
+                        {/* Date range */}
+                        <div className="grid grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <label className="block text-sm font-medium mb-1">Start Date</label>
+                            <input
+                              type="date"
+                              value={selectedCell.date}
+                              disabled
+                              className="w-full px-3 py-2 border rounded text-sm bg-gray-100"
+                              style={{ borderColor: colors.border }}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium mb-1">End Date</label>
+                            <input
+                              type="date"
+                              value={addPTOEndDate || selectedCell.date}
+                              onChange={(e) => setAddPTOEndDate(e.target.value)}
+                              min={selectedCell.date}
+                              className="w-full px-3 py-2 border rounded text-sm"
+                              style={{ borderColor: colors.border }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Time block */}
+                        <div className="mb-3">
+                          <label className="block text-sm font-medium mb-1">Time Block</label>
+                          <select
+                            value={addPTOTimeBlock}
+                            onChange={(e) => setAddPTOTimeBlock(e.target.value as 'AM' | 'PM' | 'FULL')}
+                            className="w-full px-3 py-2 border rounded text-sm"
+                            style={{ borderColor: colors.border }}
+                          >
+                            <option value="FULL">Full Day</option>
+                            <option value="AM">AM Only</option>
+                            <option value="PM">PM Only</option>
+                          </select>
+                        </div>
+
+                        {/* Leave type */}
+                        <div className="mb-3">
+                          <label className="block text-sm font-medium mb-1">Leave Type</label>
+                          <select
+                            value={addPTOLeaveType}
+                            onChange={(e) => setAddPTOLeaveType(e.target.value)}
+                            className="w-full px-3 py-2 border rounded text-sm"
+                            style={{ borderColor: colors.border }}
+                          >
+                            <option value="vacation">Vacation</option>
+                            <option value="personal">Personal</option>
+                            <option value="medical">Medical</option>
+                            <option value="conference">Conference</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+
+                        {/* Submit button */}
+                        <button
+                          onClick={async () => {
+                            if (!addPTOProvider) {
+                              alert('Please select a provider');
+                              return;
+                            }
+                            const success = await handleAddPTO(
+                              addPTOProvider,
+                              selectedCell.date,
+                              addPTOEndDate || selectedCell.date,
+                              addPTOTimeBlock,
+                              addPTOLeaveType
+                            );
+                            if (success) {
+                              setShowAddPTOForm(false);
+                              setAddPTOProvider('');
+                              setAddPTOEndDate('');
+                              setAddPTOTimeBlock('FULL');
+                              setAddPTOLeaveType('vacation');
+                              setAddPTOProviderSearch('');
+                            }
+                          }}
+                          disabled={!addPTOProvider}
+                          className="w-full px-4 py-2 rounded text-white font-medium hover:opacity-90 disabled:opacity-50"
+                          style={{ backgroundColor: colors.ptoRed }}
+                        >
+                          Create PTO
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               <button
-                onClick={() => { setSelectedCell(null); setProviderSearchQuery(''); setIsCoveringAssignment(false); }}
+                onClick={() => {
+                  setSelectedCell(null);
+                  setProviderSearchQuery('');
+                  setIsCoveringAssignment(false);
+                  setShowAddPTOForm(false);
+                  setAddPTOProvider('');
+                  setAddPTOEndDate('');
+                  setAddPTOProviderSearch('');
+                }}
                 className="mt-4 px-4 py-2 rounded w-full text-white hover:opacity-90"
                 style={{ backgroundColor: colors.primaryBlue }}
               >
@@ -2401,8 +2676,14 @@ function ServiceView({
   const renderCell = (row: ServiceRowConfig, date: string) => {
     if (!row.serviceId || !row.timeBlock) return null;
 
-    const cellAssignments = getAssignmentsForCell(row.serviceId, date, row.timeBlock);
     const isPTO = row.name === 'PTO';
+    const dayOfWeekForCell = new Date(date + 'T00:00:00').getDay();
+    const isWeekendCell = dayOfWeekForCell === 0 || dayOfWeekForCell === 6;
+
+    // For PTO row on weekends, skip showing assignments
+    const rawAssignments = getAssignmentsForCell(row.serviceId, date, row.timeBlock);
+    const cellAssignments = (isPTO && isWeekendCell) ? [] : rawAssignments;
+
     const holiday = holidays.get(date);
     const isInpatient = isInpatientService(row.name);
 
