@@ -32,11 +32,14 @@ const defaultTabs: NavItem[] = [
 const secondaryTabs: NavItem[] = [
   { id: 'providers', label: 'Providers', href: '/providers' },
   { id: 'dashboard', label: 'Dashboard', href: '/dashboard' },
+  { id: 'reports', label: 'Reports', href: '/admin/reports' },
+];
+
+const adminTabs: NavItem[] = [
   { id: 'pto-approvals', label: 'PTO Approvals', href: '/admin/pto-requests' },
   { id: 'manage-providers', label: 'Manage Providers', href: '/admin/providers' },
   { id: 'manage-services', label: 'Manage Services', href: '/admin/services' },
   { id: 'templates', label: 'Templates', href: '/admin/templates' },
-  { id: 'reports', label: 'Reports', href: '/admin/reports' },
 ];
 
 const TAB_ORDER_KEY = 'cardiology_sidebar_tab_order';
@@ -51,6 +54,10 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps)
   const { isAdminMode, authenticate, logout } = useAdmin();
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
   const [tabs, setTabs] = useState<NavItem[]>(defaultTabs);
+  const [adminExpanded, setAdminExpanded] = useState(false);
+
+  // Check if any admin tab is active to auto-expand
+  const isAdminTabActive = adminTabs.some((tab) => pathname.startsWith(tab.href));
 
   // Load custom tab order from localStorage
   useEffect(() => {
@@ -167,6 +174,53 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps)
                 {item.label}
               </Link>
             ))}
+
+            {/* Admin Dropdown */}
+            <div>
+              <button
+                onClick={() => setAdminExpanded(!adminExpanded)}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isAdminTabActive
+                    ? 'bg-white/20 text-white'
+                    : 'text-blue-100 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <span>Admin</span>
+                <svg
+                  className={`w-4 h-4 transition-transform duration-200 ${
+                    adminExpanded || isAdminTabActive ? 'rotate-180' : ''
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {/* Admin Items */}
+              <div
+                className={`overflow-hidden transition-all duration-200 ${
+                  adminExpanded || isAdminTabActive ? 'max-h-48 opacity-100' : 'max-h-0 opacity-0'
+                }`}
+              >
+                <div className="mt-1 ml-3 space-y-1">
+                  {adminTabs.map((item) => (
+                    <Link
+                      key={item.id}
+                      href={item.href}
+                      className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isActive(item.href)
+                          ? 'bg-white/20 text-white'
+                          : 'text-blue-100 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </nav>
 

@@ -38,6 +38,8 @@ export async function GET(request: Request) {
       case 'provider-availability':
         const providerIds = searchParams.get('providerIds');
         return await getProviderAvailabilityReport(startDate, endDate, providerIds ? providerIds.split(',') : []);
+      case 'provider-rules':
+        return await getProviderRulesReport();
       default:
         return await getGeneralStatsReport(startDate, endDate);
     }
@@ -545,5 +547,74 @@ async function getProviderAvailabilityReport(startDate: string, endDate: string,
     dateRange: { startDate, endDate },
     providers: providers.map((p: any) => ({ id: p.id, initials: p.initials, name: p.name, roomCount: p.default_room_count || 3 })),
     slots
+  });
+}
+
+async function getProviderRulesReport() {
+  // Fetch all providers
+  const { data: providers } = await supabase
+    .from('providers')
+    .select('id, name, initials, role')
+    .order('name');
+
+  // Fetch all availability rules with provider and service info
+  const { data: rules } = await supabase
+    .from('provider_availability_rules')
+    .select(`
+      *,
+      provider:providers(id, name, initials),
+      service:services(id, name, time_block)
+    `)
+    .order('provider_id');
+
+  // Fetch all provider leaves
+  const today = formatLocalDate(new Date());
+  const { data: leaves } = await supabase
+    .from('provider_leaves')
+    .select(`
+      *,
+      provider:providers(id, name, initials)
+    `)
+    .gte('end_date', today)
+    .order('start_date');
+
+  // Group rules by provider
+  const rulesByProvider = new Map<string, any[]>();
+  rules?.forEach((rule: any) => {
+    const providerId = rule.provider_id;
+    if (!rulesByProvider.has(providerId)) {
+      rulesByProvider.set(providerId, []);
+    }
+    rulesByProvider.get(providerId)!.push(rule);
+  });
+
+  // Build grouped availability rules
+  const availabilityRules = providers
+    ?.filter((p: any) => rulesByProvider.has(p.id))
+    .map((p: any) => ({
+      provider: p,
+      rules: rulesByProvider.get(p.id) || []
+    })) || [];
+
+  // Calculate stats
+  const totalRules = rules?.length || 0;
+  const totalAllowRules = rules?.filter((r: any) => r.rule_type === 'allow').length || 0;
+  const totalBlockRules = rules?.filter((r: any) => r.rule_type === 'block').length || 0;
+  const providersWithRules = rulesByProvider.size;
+  const activeLeaves = leaves?.length || 0;
+
+  return NextResponse.json({
+    type: 'provider-rules',
+    data: {
+      availabilityRules,
+      leaves: leaves || [],
+      stats: {
+        totalRules,
+        totalAllowRules,
+        totalBlockRules,
+        providersWithRules,
+        activeLeaves
+      }
+    }
   });
 }

@@ -58,7 +58,36 @@ export type ReportType =
   | 'provider-workload'
   | 'service-coverage'
   | 'room-utilization'
-  | 'pto-summary';
+  | 'pto-summary'
+  | 'provider-rules'
+  | 'custom-builder';
+
+// Custom Report Builder Types
+export type ReportDataSource =
+  | 'schedule_assignments'
+  | 'providers'
+  | 'services'
+  | 'provider_availability_rules'
+  | 'provider_leaves';
+
+export interface CustomReportConfig {
+  dataSource: ReportDataSource;
+  selectedColumns: string[];
+  filters: ReportFilter[];
+  groupBy?: string;
+}
+
+export interface ReportFilter {
+  field: string;
+  operator: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'between';
+  value: any;
+}
+
+export interface ReportColumnDef {
+  key: string;
+  label: string;
+  type: 'string' | 'number' | 'date' | 'boolean';
+}
 
 export interface ReportParams {
   type: ReportType;
@@ -121,12 +150,40 @@ export interface PTOSummaryReport {
   }>;
 }
 
+export interface ProviderRulesReport {
+  type: 'provider-rules';
+  data: {
+    availabilityRules: Array<{
+      provider: Provider;
+      rules: ProviderAvailabilityRule[];
+    }>;
+    leaves: ProviderLeave[];
+    stats: {
+      totalRules: number;
+      totalAllowRules: number;
+      totalBlockRules: number;
+      providersWithRules: number;
+      activeLeaves: number;
+    };
+  };
+}
+
+export interface CustomReport {
+  type: 'custom';
+  dataSource: ReportDataSource;
+  columns: string[];
+  data: any[];
+  totalRows: number;
+}
+
 export type Report =
   | GeneralStatsReport
   | ProviderWorkloadReport
   | ServiceCoverageReport
   | RoomUtilizationReport
-  | PTOSummaryReport;
+  | PTOSummaryReport
+  | ProviderRulesReport
+  | CustomReport;
 
 // Template Types
 export type TemplateType = 'weekly' | 'provider-leave' | 'custom';

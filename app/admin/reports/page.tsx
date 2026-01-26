@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import CustomReportBuilder from '@/app/components/reports/CustomReportBuilder';
+import { dayOfWeekLabels } from '@/app/components/reports/reportColumns';
 
 // Helper to format date in local timezone (avoids UTC conversion issues)
 function formatLocalDate(date: Date): string {
@@ -30,7 +32,7 @@ interface Service {
   time_block: string;
 }
 
-type ReportType = 'general-stats' | 'provider-workload' | 'service-coverage' | 'room-utilization' | 'pto-summary' | 'rooms-open-monthly' | 'provider-availability';
+type ReportType = 'general-stats' | 'provider-workload' | 'service-coverage' | 'room-utilization' | 'pto-summary' | 'rooms-open-monthly' | 'provider-availability' | 'provider-rules' | 'custom-builder';
 
 export default function ReportsPage() {
   const [reportType, setReportType] = useState<ReportType>('general-stats');
@@ -63,6 +65,8 @@ export default function ReportsPage() {
     { value: 'pto-summary', label: 'PTO Summary' },
     { value: 'rooms-open-monthly', label: 'Open Rooms (Monthly)' },
     { value: 'provider-availability', label: 'Provider Availability Planner' },
+    { value: 'provider-rules', label: 'Provider Rules' },
+    { value: 'custom-builder', label: 'Custom Report Builder' },
   ];
 
   // Fetch providers and services when provider-availability report is selected
@@ -342,7 +346,7 @@ export default function ReportsPage() {
 
                   const getUsedColor = () => {
                     if (item.totalRooms === 0) return '#9CA3AF'; // gray
-                    if (item.totalRooms < 12) return '#D97706'; // yellow/orange - under
+                    if (item.totalRooms < 13) return '#D97706'; // yellow/orange - under
                     if (item.totalRooms <= maxGreen) return colors.teal; // green - optimal
                     return '#DC2626'; // red - over
                   };
@@ -672,6 +676,158 @@ export default function ReportsPage() {
         );
       }
 
+      case 'provider-rules': {
+        const { availabilityRules, leaves, stats } = report.data || {};
+
+        return (
+          <div className="space-y-6">
+            {/* Summary Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="bg-white p-4 rounded-lg shadow">
+                <div className="text-sm text-gray-500">Total Rules</div>
+                <div className="text-2xl font-bold" style={{ color: colors.primaryBlue }}>
+                  {stats?.totalRules || 0}
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-lg shadow">
+                <div className="text-sm text-gray-500">Allow Rules</div>
+                <div className="text-2xl font-bold" style={{ color: colors.teal }}>
+                  {stats?.totalAllowRules || 0}
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-lg shadow">
+                <div className="text-sm text-gray-500">Block Rules</div>
+                <div className="text-2xl font-bold" style={{ color: '#DC2626' }}>
+                  {stats?.totalBlockRules || 0}
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-lg shadow">
+                <div className="text-sm text-gray-500">Providers with Rules</div>
+                <div className="text-2xl font-bold" style={{ color: colors.lightBlue }}>
+                  {stats?.providersWithRules || 0}
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-lg shadow">
+                <div className="text-sm text-gray-500">Active Leaves</div>
+                <div className="text-2xl font-bold" style={{ color: '#D97706' }}>
+                  {stats?.activeLeaves || 0}
+                </div>
+              </div>
+            </div>
+
+            {/* Availability Rules Section */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-4 py-3 border-b" style={{ backgroundColor: colors.primaryBlue, borderColor: colors.border }}>
+                <h3 className="text-lg font-semibold text-white">Availability Rules</h3>
+              </div>
+              {availabilityRules && availabilityRules.length > 0 ? (
+                <div className="divide-y" style={{ borderColor: colors.border }}>
+                  {availabilityRules.map((providerGroup: any, idx: number) => (
+                    <div key={providerGroup.provider?.id || idx} className="p-4">
+                      <h4 className="font-semibold mb-3" style={{ color: colors.primaryBlue }}>
+                        {providerGroup.provider?.name} ({providerGroup.provider?.initials})
+                      </h4>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50">
+                            <th className="px-3 py-2 text-left font-medium text-gray-600">Service</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-600">Day</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-600">Time Block</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-600">Type</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-600">Enforcement</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-600">Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {providerGroup.rules.map((rule: any, ruleIdx: number) => (
+                            <tr key={rule.id || ruleIdx} className={ruleIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-3 py-2">{rule.service?.name || 'All Services'}</td>
+                              <td className="px-3 py-2">{dayOfWeekLabels[rule.day_of_week] || rule.day_of_week}</td>
+                              <td className="px-3 py-2">{rule.time_block}</td>
+                              <td className="px-3 py-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                    rule.rule_type === 'allow'
+                                      ? 'bg-green-100 text-green-800'
+                                      : 'bg-red-100 text-red-800'
+                                  }`}
+                                >
+                                  {rule.rule_type?.toUpperCase()}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                    rule.enforcement === 'hard'
+                                      ? 'bg-orange-100 text-orange-800'
+                                      : 'bg-yellow-100 text-yellow-800'
+                                  }`}
+                                >
+                                  {rule.enforcement}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-gray-600">{rule.reason || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 text-center text-gray-500">
+                  No availability rules configured.
+                </div>
+              )}
+            </div>
+
+            {/* Provider Leaves Section */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-4 py-3 border-b" style={{ backgroundColor: colors.primaryBlue, borderColor: colors.border }}>
+                <h3 className="text-lg font-semibold text-white">Active/Upcoming Leaves</h3>
+              </div>
+              {leaves && leaves.length > 0 ? (
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Provider</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Start Date</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">End Date</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Type</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaves.map((leave: any, idx: number) => (
+                      <tr key={leave.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-4 py-3">
+                          <span className="font-bold" style={{ color: colors.primaryBlue }}>
+                            {leave.provider?.initials}
+                          </span>
+                          <span className="ml-2 text-gray-600">{leave.provider?.name}</span>
+                        </td>
+                        <td className="px-4 py-3">{leave.start_date}</td>
+                        <td className="px-4 py-3">{leave.end_date}</td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                            {leave.leave_type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">{leave.reason || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-8 text-center text-gray-500">
+                  No active or upcoming leaves.
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
       default:
         return <div className="text-gray-500">Unknown report type</div>;
     }
@@ -683,15 +839,18 @@ export default function ReportsPage() {
         Reports
       </h2>
 
-      {/* Report Controls */}
+      {/* Report Type Selector - Always Visible */}
       <div className="bg-white rounded-lg shadow p-4 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
+          <div className={reportType === 'custom-builder' ? 'md:col-span-4' : ''}>
             <label className="block text-sm font-medium mb-1">Report Type</label>
             <select
               value={reportType}
-              onChange={(e) => setReportType(e.target.value as ReportType)}
-              className="w-full px-3 py-2 border rounded"
+              onChange={(e) => {
+                setReportType(e.target.value as ReportType);
+                setReport(null); // Clear previous report when switching types
+              }}
+              className="w-full max-w-md px-3 py-2 border rounded"
               style={{ borderColor: colors.border }}
             >
               {reportTypes.map(rt => (
@@ -699,36 +858,40 @@ export default function ReportsPage() {
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Start Date</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-3 py-2 border rounded"
-              style={{ borderColor: colors.border }}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">End Date</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-full px-3 py-2 border rounded"
-              style={{ borderColor: colors.border }}
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              onClick={generateReport}
-              disabled={loading || (reportType === 'provider-availability' && selectedProviderIds.size === 0)}
-              className="w-full px-4 py-2 rounded text-white font-medium disabled:opacity-50"
-              style={{ backgroundColor: colors.primaryBlue }}
-            >
-              {loading ? 'Generating...' : 'Generate Report'}
-            </button>
-          </div>
+          {reportType !== 'custom-builder' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full px-3 py-2 border rounded"
+                  style={{ borderColor: colors.border }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full px-3 py-2 border rounded"
+                  style={{ borderColor: colors.border }}
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={generateReport}
+                  disabled={loading || (reportType === 'provider-availability' && selectedProviderIds.size === 0)}
+                  className="w-full px-4 py-2 rounded text-white font-medium disabled:opacity-50"
+                  style={{ backgroundColor: colors.primaryBlue }}
+                >
+                  {loading ? 'Generating...' : 'Generate Report'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Provider Selector for Provider Availability Report */}
@@ -766,12 +929,22 @@ export default function ReportsPage() {
         )}
       </div>
 
-      {/* Report Results */}
-      {report && (
+      {/* Custom Report Builder */}
+      {reportType === 'custom-builder' && (
+        <CustomReportBuilder
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={setStartDate}
+          onEndDateChange={setEndDate}
+        />
+      )}
+
+      {/* Standard Report Results */}
+      {reportType !== 'custom-builder' && report && (
         <div>
           <div className="mb-4 text-sm text-gray-500">
-            Report: {reportTypes.find(rt => rt.value === report.type)?.label} |
-            Date Range: {report.dateRange?.startDate} to {report.dateRange?.endDate}
+            Report: {reportTypes.find(rt => rt.value === report.type)?.label}
+            {report.dateRange && ` | Date Range: ${report.dateRange.startDate} to ${report.dateRange.endDate}`}
           </div>
           {renderReport()}
         </div>
