@@ -11,6 +11,8 @@ import AvailabilityWarningModal from './AvailabilityWarningModal';
 import PTOConflictModal from './PTOConflictModal';
 import EditAssignmentModal from './calendar/EditAssignmentModal';
 import DayMetadataModal from './DayMetadataModal';
+import DayNoteModal from './DayNoteModal';
+import DateContextMenu from './DateContextMenu';
 import BulkScheduleModal from './calendar/BulkScheduleModal';
 import UndoHistoryModal from './admin/UndoHistoryModal';
 
@@ -186,6 +188,10 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     date: string;
     timeBlock: 'AM' | 'PM';
   } | null>(null);
+
+  // Day note modal and context menu
+  const [dayNoteModalData, setDayNoteModalData] = useState<{ date: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; date: string } | null>(null);
 
   // Add PTO form state
   const [showAddPTOForm, setShowAddPTOForm] = useState(false);
@@ -1104,6 +1110,35 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     }
   };
 
+  // Handle right-click on date header
+  const handleDateRightClick = (e: React.MouseEvent, date: string) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, date });
+  };
+
+  // Save day note (uses time_block: 'DAY')
+  const handleSaveDayNote = async (date: string, note: string) => {
+    try {
+      const response = await fetch('/api/day-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date,
+          time_block: 'DAY',
+          day_note: note || null,
+          chp_room_in_use: false,
+          extra_room_available: false,
+        }),
+      });
+
+      if (response.ok) {
+        await fetchData();
+      }
+    } catch (error) {
+      console.error('Error saving day note:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: colors.lightGray }}>
@@ -1682,6 +1717,8 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             onEditAssignment={isAdmin ? setEditingAssignment : () => {}}
             getMetadataForCell={getMetadataForCell}
             onOpenMetadataModal={(date, timeBlock) => setMetadataModalData({ date, timeBlock })}
+            getDayNote={getDayNote}
+            onDateContextMenu={handleDateRightClick}
           />
         ) : (
           <ProviderView
@@ -2440,6 +2477,28 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
         />
       )}
 
+      {/* Day Note Modal */}
+      {dayNoteModalData && (
+        <DayNoteModal
+          date={dayNoteModalData.date}
+          existingNote={getDayNote(dayNoteModalData.date)}
+          onSave={handleSaveDayNote}
+          onClose={() => setDayNoteModalData(null)}
+        />
+      )}
+
+      {/* Date Context Menu */}
+      {contextMenu && (
+        <DateContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          date={contextMenu.date}
+          hasNote={!!getDayNote(contextMenu.date)}
+          onAddNote={() => setDayNoteModalData({ date: contextMenu.date })}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
       {/* Footer */}
       <footer className="py-4 px-4 border-t mt-8" style={{ borderColor: colors.border }}>
         <div className="max-w-full mx-auto text-center text-sm text-gray-500">
@@ -2484,6 +2543,8 @@ interface ServiceViewProps {
   onEditAssignment: (assignment: ScheduleAssignment) => void;
   getMetadataForCell: (date: string, timeBlock: 'AM' | 'PM') => DayMetadata | null;
   onOpenMetadataModal: (date: string, timeBlock: 'AM' | 'PM') => void;
+  getDayNote: (date: string) => string | null;
+  onDateContextMenu: (e: React.MouseEvent, date: string) => void;
 }
 
 // Service grouping configuration
@@ -2519,6 +2580,8 @@ function ServiceView({
   onEditAssignment,
   getMetadataForCell,
   onOpenMetadataModal,
+  getDayNote,
+  onDateContextMenu,
 }: ServiceViewProps) {
   // Helper to find service by name
   const findService = (name: string) => services.find((s) => s.name === name);
@@ -3347,21 +3410,37 @@ function ServiceView({
               </th>
               {dateRange.map((date) => {
                 const holiday = holidays.get(date);
+                const dayNote = getDayNote(date);
                 return (
                   <th
                     key={date}
-                    className="border px-3 py-2 min-w-[120px]"
+                    className="border px-3 py-2 min-w-[120px] cursor-context-menu"
                     style={{
                       backgroundColor: holiday ? colors.holidayBgLight : colors.lightGray,
                       borderColor: colors.border,
                     }}
+                    onContextMenu={(e) => onDateContextMenu(e, date)}
                   >
                     <div className="text-center">
-                      <div
-                        className="font-semibold text-sm"
-                        style={{ color: holiday ? colors.holidayPurple : colors.primaryBlue }}
-                      >
-                        {getDayOfWeek(date)}
+                      <div className="flex items-center justify-center gap-1">
+                        <span
+                          className="font-semibold text-sm"
+                          style={{ color: holiday ? colors.holidayPurple : colors.primaryBlue }}
+                        >
+                          {getDayOfWeek(date)}
+                        </span>
+                        {dayNote && (
+                          <span title={dayNote}>
+                            <svg
+                              className="w-3 h-3"
+                              style={{ color: colors.noteBlue }}
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
+                            </svg>
+                          </span>
+                        )}
                       </div>
                       <div
                         className="text-xs"
@@ -3375,6 +3454,15 @@ function ServiceView({
                           style={{ color: colors.holidayPurple }}
                         >
                           {holiday.name}
+                        </div>
+                      )}
+                      {dayNote && (
+                        <div
+                          className="text-xs mt-1 px-1 rounded truncate max-w-[100px]"
+                          style={{ backgroundColor: '#DBEAFE', color: colors.noteBlue }}
+                          title={dayNote}
+                        >
+                          {dayNote}
                         </div>
                       )}
                     </div>
