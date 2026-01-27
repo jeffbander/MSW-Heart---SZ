@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Provider } from '@/lib/types';
 import { useAdmin } from '@/app/contexts/AdminContext';
 
@@ -42,6 +42,11 @@ export default function ProvidersAdminPage() {
   const [loading, setLoading] = useState(true);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterRole, setFilterRole] = useState('');
+  const [filterCapability, setFilterCapability] = useState('');
+  const [sortField, setSortField] = useState<'initials' | 'name' | 'role' | 'rooms' | 'pto'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [formData, setFormData] = useState({
     name: '',
     initials: '',
@@ -249,6 +254,47 @@ export default function ProvidersAdminPage() {
         : [...prev.capabilities, cap]
     }));
   };
+
+  const handleProviderSort = (field: 'initials' | 'name' | 'role' | 'rooms' | 'pto') => {
+    if (sortField === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const filteredProviders = useMemo(() => {
+    let result = providers.filter(p => {
+      if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase())
+          && !p.initials.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (filterRole && p.role !== filterRole) return false;
+      if (filterCapability && !p.capabilities.includes(filterCapability)) return false;
+      return true;
+    });
+    result.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'initials':
+          cmp = a.initials.localeCompare(b.initials);
+          break;
+        case 'name':
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case 'role':
+          cmp = a.role.localeCompare(b.role);
+          break;
+        case 'rooms':
+          cmp = a.default_room_count - b.default_room_count;
+          break;
+        case 'pto':
+          cmp = (ptoBalances[a.id]?.days_remaining ?? 0) - (ptoBalances[b.id]?.days_remaining ?? 0);
+          break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return result;
+  }, [providers, searchQuery, filterRole, filterCapability, sortField, sortDir, ptoBalances]);
 
   if (loading) {
     return <div className="text-center py-8">Loading providers...</div>;
@@ -496,22 +542,78 @@ export default function ProvidersAdminPage() {
         </div>
       )}
 
+      {/* Search & Filter Toolbar */}
+      <div className="bg-white rounded-lg shadow p-4 mb-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <input
+              type="text"
+              placeholder="Search by name/initials..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-3 py-2 border rounded text-sm"
+              style={{ borderColor: colors.border }}
+            />
+          </div>
+          <div>
+            <select
+              value={filterRole}
+              onChange={(e) => setFilterRole(e.target.value)}
+              className="px-3 py-2 border rounded text-sm"
+              style={{ borderColor: colors.border }}
+            >
+              <option value="">All Roles</option>
+              <option value="attending">Attending</option>
+              <option value="fellow">Fellow</option>
+              <option value="pa">PA</option>
+              <option value="np">NP</option>
+            </select>
+          </div>
+          <div>
+            <select
+              value={filterCapability}
+              onChange={(e) => setFilterCapability(e.target.value)}
+              className="px-3 py-2 border rounded text-sm"
+              style={{ borderColor: colors.border }}
+            >
+              <option value="">All Capabilities</option>
+              {AVAILABLE_CAPABILITIES.map(cap => (
+                <option key={cap} value={cap}>{cap}</option>
+              ))}
+            </select>
+          </div>
+          <div className="text-sm text-gray-500">
+            Showing {filteredProviders.length} of {providers.length}
+          </div>
+        </div>
+      </div>
+
       {/* Providers Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="w-full">
           <thead>
             <tr style={{ backgroundColor: colors.primaryBlue }}>
-              <th className="px-4 py-3 text-left text-white text-sm font-medium">Initials</th>
-              <th className="px-4 py-3 text-left text-white text-sm font-medium">Name</th>
-              <th className="px-4 py-3 text-left text-white text-sm font-medium">Role</th>
-              <th className="px-4 py-3 text-left text-white text-sm font-medium">PTO Balance</th>
-              <th className="px-4 py-3 text-left text-white text-sm font-medium">Rooms</th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium cursor-pointer select-none" onClick={() => handleProviderSort('initials')}>
+                Initials {sortField === 'initials' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+              </th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium cursor-pointer select-none" onClick={() => handleProviderSort('name')}>
+                Name {sortField === 'name' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+              </th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium cursor-pointer select-none" onClick={() => handleProviderSort('role')}>
+                Role {sortField === 'role' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+              </th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium cursor-pointer select-none" onClick={() => handleProviderSort('pto')}>
+                PTO Balance {sortField === 'pto' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+              </th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium cursor-pointer select-none" onClick={() => handleProviderSort('rooms')}>
+                Rooms {sortField === 'rooms' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+              </th>
               <th className="px-4 py-3 text-left text-white text-sm font-medium">Capabilities</th>
               <th className="px-4 py-3 text-right text-white text-sm font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {providers.map((provider, idx) => (
+            {filteredProviders.map((provider, idx) => (
               <tr
                 key={provider.id}
                 className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Service, Provider } from '@/lib/types';
 import { useAdmin } from '@/app/contexts/AdminContext';
 
@@ -28,6 +28,12 @@ export default function ServicesAdminPage() {
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [viewingEligible, setViewingEligible] = useState<Service | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterTimeBlock, setFilterTimeBlock] = useState<'' | 'AM' | 'PM' | 'BOTH'>('');
+  const [filterCapability, setFilterCapability] = useState('');
+  const [filterCalendar, setFilterCalendar] = useState<'' | 'yes' | 'no'>('');
+  const [sortField, setSortField] = useState<'name' | 'time_block' | 'eligible' | 'capability'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [formData, setFormData] = useState({
     name: '',
     time_block: 'AM' as 'AM' | 'PM' | 'BOTH',
@@ -76,6 +82,46 @@ export default function ServicesAdminPage() {
     if (count < 5) return '#D97706'; // Yellow/Orange
     return '#059669'; // Green
   };
+
+  const handleServiceSort = (field: 'name' | 'time_block' | 'eligible' | 'capability') => {
+    if (sortField === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const filteredServices = useMemo(() => {
+    let result = services.filter(s => {
+      if (searchQuery && !s.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (filterTimeBlock && s.time_block !== filterTimeBlock) return false;
+      if (filterCapability === '__none__' && s.required_capability) return false;
+      if (filterCapability && filterCapability !== '__none__' && s.required_capability !== filterCapability) return false;
+      if (filterCalendar === 'yes' && !s.show_on_main_calendar) return false;
+      if (filterCalendar === 'no' && s.show_on_main_calendar) return false;
+      return true;
+    });
+    result.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'name':
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case 'time_block':
+          cmp = a.time_block.localeCompare(b.time_block);
+          break;
+        case 'capability':
+          cmp = (a.required_capability || '').localeCompare(b.required_capability || '');
+          break;
+        case 'eligible':
+          cmp = getEligibleProviders(a).length - getEligibleProviders(b).length;
+          break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return result;
+  }, [services, searchQuery, filterTimeBlock, filterCapability, filterCalendar, sortField, sortDir, providers]);
 
   const handleCreate = async () => {
     try {
@@ -332,22 +378,88 @@ export default function ServicesAdminPage() {
         </div>
       )}
 
+      {/* Search & Filter Toolbar */}
+      <div className="bg-white rounded-lg shadow p-4 mb-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <input
+              type="text"
+              placeholder="Search services..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-3 py-2 border rounded text-sm"
+              style={{ borderColor: colors.border }}
+            />
+          </div>
+          <div>
+            <select
+              value={filterTimeBlock}
+              onChange={(e) => setFilterTimeBlock(e.target.value as '' | 'AM' | 'PM' | 'BOTH')}
+              className="px-3 py-2 border rounded text-sm"
+              style={{ borderColor: colors.border }}
+            >
+              <option value="">All Time Blocks</option>
+              <option value="AM">AM</option>
+              <option value="PM">PM</option>
+              <option value="BOTH">BOTH</option>
+            </select>
+          </div>
+          <div>
+            <select
+              value={filterCapability}
+              onChange={(e) => setFilterCapability(e.target.value)}
+              className="px-3 py-2 border rounded text-sm"
+              style={{ borderColor: colors.border }}
+            >
+              <option value="">All Capabilities</option>
+              <option value="__none__">None (no capability)</option>
+              {AVAILABLE_CAPABILITIES.map(cap => (
+                <option key={cap} value={cap}>{cap}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <select
+              value={filterCalendar}
+              onChange={(e) => setFilterCalendar(e.target.value as '' | 'yes' | 'no')}
+              className="px-3 py-2 border rounded text-sm"
+              style={{ borderColor: colors.border }}
+            >
+              <option value="">All Calendar</option>
+              <option value="yes">On Calendar</option>
+              <option value="no">Not on Calendar</option>
+            </select>
+          </div>
+          <div className="text-sm text-gray-500">
+            Showing {filteredServices.length} of {services.length}
+          </div>
+        </div>
+      </div>
+
       {/* Services Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="w-full">
           <thead>
             <tr style={{ backgroundColor: colors.primaryBlue }}>
-              <th className="px-4 py-3 text-left text-white text-sm font-medium">Name</th>
-              <th className="px-4 py-3 text-left text-white text-sm font-medium">Time Block</th>
-              <th className="px-4 py-3 text-left text-white text-sm font-medium">Required Capability</th>
-              <th className="px-4 py-3 text-center text-white text-sm font-medium">Eligible</th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium cursor-pointer select-none" onClick={() => handleServiceSort('name')}>
+                Name {sortField === 'name' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+              </th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium cursor-pointer select-none" onClick={() => handleServiceSort('time_block')}>
+                Time Block {sortField === 'time_block' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+              </th>
+              <th className="px-4 py-3 text-left text-white text-sm font-medium cursor-pointer select-none" onClick={() => handleServiceSort('capability')}>
+                Required Capability {sortField === 'capability' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+              </th>
+              <th className="px-4 py-3 text-center text-white text-sm font-medium cursor-pointer select-none" onClick={() => handleServiceSort('eligible')}>
+                Eligible {sortField === 'eligible' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+              </th>
               <th className="px-4 py-3 text-center text-white text-sm font-medium">Rooms</th>
               <th className="px-4 py-3 text-center text-white text-sm font-medium">Calendar</th>
               <th className="px-4 py-3 text-right text-white text-sm font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {services.map((service, idx) => {
+            {filteredServices.map((service, idx) => {
               const eligibleProviders = getEligibleProviders(service);
               const eligibleCount = eligibleProviders.length;
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Provider, PTORequest, LeaveType, PTOTimeBlock } from '@/lib/types';
 import PTOCalendar from '@/app/components/admin/PTOCalendar';
 import { useAdmin } from '@/app/contexts/AdminContext';
@@ -42,6 +42,8 @@ export default function AdminPTORequestsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('pending');
   const [filterProviderId, setFilterProviderId] = useState<string>('');
   const [viewMode, setViewMode] = useState<ViewMode>('calendar');
+  const [sortField, setSortField] = useState<'provider' | 'dates' | 'type' | 'time' | 'status' | 'requested'>('dates');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -192,6 +194,44 @@ export default function AdminPTORequestsPage() {
     if (filterProviderId && r.provider_id !== filterProviderId) return false;
     return true;
   });
+
+  const handlePtoSort = (field: 'provider' | 'dates' | 'type' | 'time' | 'status' | 'requested') => {
+    if (sortField === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const sortedRequests = useMemo(() => {
+    const sorted = [...filteredRequests];
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'provider':
+          cmp = (a.provider?.name || '').localeCompare(b.provider?.name || '');
+          break;
+        case 'dates':
+          cmp = (a.start_date || '').localeCompare(b.start_date || '');
+          break;
+        case 'type':
+          cmp = (a.leave_type || '').localeCompare(b.leave_type || '');
+          break;
+        case 'time':
+          cmp = (a.time_block || '').localeCompare(b.time_block || '');
+          break;
+        case 'status':
+          cmp = (a.status || '').localeCompare(b.status || '');
+          break;
+        case 'requested':
+          cmp = (a.created_at || '').localeCompare(b.created_at || '');
+          break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [filteredRequests, sortField, sortDir]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -455,24 +495,36 @@ export default function AdminPTORequestsPage() {
           <table className="w-full">
             <thead>
               <tr style={{ backgroundColor: colors.lightGray }}>
-                <th className="px-4 py-3 text-left text-sm font-medium">Provider</th>
-                <th className="px-4 py-3 text-left text-sm font-medium">Dates</th>
-                <th className="px-4 py-3 text-left text-sm font-medium">Type</th>
-                <th className="px-4 py-3 text-center text-sm font-medium">Time</th>
-                <th className="px-4 py-3 text-center text-sm font-medium">Status</th>
-                <th className="px-4 py-3 text-left text-sm font-medium">Requested</th>
+                <th className="px-4 py-3 text-left text-sm font-medium cursor-pointer select-none" onClick={() => handlePtoSort('provider')}>
+                  Provider {sortField === 'provider' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                </th>
+                <th className="px-4 py-3 text-left text-sm font-medium cursor-pointer select-none" onClick={() => handlePtoSort('dates')}>
+                  Dates {sortField === 'dates' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                </th>
+                <th className="px-4 py-3 text-left text-sm font-medium cursor-pointer select-none" onClick={() => handlePtoSort('type')}>
+                  Type {sortField === 'type' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                </th>
+                <th className="px-4 py-3 text-center text-sm font-medium cursor-pointer select-none" onClick={() => handlePtoSort('time')}>
+                  Time {sortField === 'time' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                </th>
+                <th className="px-4 py-3 text-center text-sm font-medium cursor-pointer select-none" onClick={() => handlePtoSort('status')}>
+                  Status {sortField === 'status' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                </th>
+                <th className="px-4 py-3 text-left text-sm font-medium cursor-pointer select-none" onClick={() => handlePtoSort('requested')}>
+                  Requested {sortField === 'requested' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                </th>
                 <th className="px-4 py-3 text-center text-sm font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y" style={{ borderColor: colors.border }}>
-              {filteredRequests.length === 0 ? (
+              {sortedRequests.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                     No requests found
                   </td>
                 </tr>
               ) : (
-                filteredRequests.map((req) => (
+                sortedRequests.map((req) => (
                   <tr key={req.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <span className="font-bold" style={{ color: colors.primaryBlue }}>

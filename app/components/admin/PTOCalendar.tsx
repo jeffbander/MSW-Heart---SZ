@@ -48,6 +48,7 @@ export default function PTOCalendar({
 }: PTOCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedRequest, setSelectedRequest] = useState<PTORequest | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterProviderId, setFilterProviderId] = useState<string>('');
 
@@ -249,10 +250,11 @@ export default function PTOCalendar({
             return (
               <div
                 key={idx}
-                className={`min-h-[100px] p-1 border-b border-r ${
+                className={`min-h-[100px] p-1 border-b border-r cursor-pointer ${
                   isInMonth ? 'bg-white' : 'bg-gray-50'
                 }`}
                 style={{ borderColor: colors.border }}
+                onClick={() => dayRequests.length > 0 && setSelectedDate(date)}
               >
                 <div
                   className={`text-sm mb-1 ${
@@ -273,7 +275,7 @@ export default function PTOCalendar({
                   {dayRequests.slice(0, 3).map((request) => (
                     <button
                       key={request.id}
-                      onClick={() => setSelectedRequest(request)}
+                      onClick={(e) => { e.stopPropagation(); setSelectedRequest(request); }}
                       className="w-full text-left px-1 py-0.5 rounded text-xs text-white truncate hover:opacity-90"
                       style={{ backgroundColor: getStatusColor(request.status) }}
                       title={`${getProviderName(request.provider_id)} - ${request.status}`}
@@ -398,6 +400,66 @@ export default function PTOCalendar({
               <button
                 onClick={() => setSelectedRequest(null)}
                 className="flex-1 py-2 rounded border font-medium hover:bg-gray-50"
+                style={{ borderColor: colors.border }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Day Summary Modal */}
+      {selectedDate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-start justify-between mb-4">
+              <h3 className="text-lg font-semibold" style={{ color: colors.primaryBlue }}>
+                PTO for {selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </h3>
+              <button
+                onClick={() => setSelectedDate(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 mb-6 max-h-[400px] overflow-y-auto">
+              {getRequestsForDate(selectedDate).map((request) => (
+                <button
+                  key={request.id}
+                  onClick={() => {
+                    setSelectedRequest(request);
+                    setSelectedDate(null);
+                  }}
+                  className="w-full text-left p-3 rounded-lg border hover:bg-gray-50 transition-colors"
+                  style={{ borderColor: colors.border }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium" style={{ color: colors.primaryBlue }}>
+                      {providers.find((p) => p.id === request.provider_id)?.name || 'Unknown'}{' '}
+                      - {leaveTypeLabels[request.leave_type] || request.leave_type}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-sm text-gray-500">
+                      {request.time_block === 'FULL' ? 'Full Day' : `${request.time_block} Only`}
+                    </span>
+                    <span
+                      className="px-2 py-0.5 text-xs font-medium rounded text-white"
+                      style={{ backgroundColor: getStatusColor(request.status) }}
+                    >
+                      {request.status.toUpperCase()}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setSelectedDate(null)}
+                className="px-4 py-2 rounded border font-medium hover:bg-gray-50"
                 style={{ borderColor: colors.border }}
               >
                 Close

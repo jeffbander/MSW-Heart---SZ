@@ -151,7 +151,7 @@ export default function BulkScheduleModal({
         // Filter to matching criteria
         const matching = allAssignments.filter(a => {
           if (a.provider_id !== selectedProviderId) return false;
-          if (a.service_id !== selectedServiceId) return false;
+          if (selectedServiceId !== 'ALL' && a.service_id !== selectedServiceId) return false;
 
           const date = new Date(a.date + 'T00:00:00');
           if (!selectedDays.includes(date.getDay())) return false;
@@ -291,7 +291,7 @@ export default function BulkScheduleModal({
         <div className="flex gap-2 mb-6">
           <button
             type="button"
-            onClick={() => setAction('ADD')}
+            onClick={() => { setAction('ADD'); if (selectedServiceId === 'ALL') setSelectedServiceId(''); }}
             className={`px-4 py-2 rounded font-medium ${
               action === 'ADD' ? 'text-white' : ''
             }`}
@@ -389,11 +389,14 @@ export default function BulkScheduleModal({
                 style={{ borderColor: colors.border }}
               >
                 <option value="">Select a service...</option>
+                {action === 'REMOVE' && (
+                  <option value="ALL">All Services</option>
+                )}
                 {services.map(s => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
-              {selectedService?.required_capability && selectedProvider && !hasCapability && (
+              {selectedServiceId !== 'ALL' && selectedService?.required_capability && selectedProvider && !hasCapability && (
                 <div className="mt-1 text-sm text-amber-600">
                   Warning: {selectedProvider.initials} does not have the &quot;{selectedService.required_capability}&quot; capability
                 </div>
