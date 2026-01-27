@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTemplate, Holiday } from '@/lib/types';
+import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTemplate, Holiday, Provider, Service, ScheduleAssignment } from '@/lib/types';
 import { ScheduleGrid } from '@/components/schedule-grid';
 import EchoAssignmentModal from '@/app/components/EchoAssignmentModal';
+import ProvidersScheduleGrid from '@/app/components/ProvidersScheduleGrid';
 import { useAdmin } from '@/app/contexts/AdminContext';
 import PasscodeModal from '@/app/components/layout/PasscodeModal';
 
@@ -36,6 +37,15 @@ export default function EchoPage() {
   // Admin state
   const { isAdminMode, authenticate, logout } = useAdmin();
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'techs' | 'providers'>('techs');
+
+  // Providers tab data
+  const [mainProviders, setMainProviders] = useState<Provider[]>([]);
+  const [mainServices, setMainServices] = useState<Service[]>([]);
+  const [mainAssignments, setMainAssignments] = useState<ScheduleAssignment[]>([]);
+  const [providersLoading, setProvidersLoading] = useState(false);
 
   // UI state
   const [weekOffset, setWeekOffset] = useState(0);
@@ -121,6 +131,32 @@ export default function EchoPage() {
   useEffect(() => {
     fetchData();
   }, [weekStartDate, weekEndDate]);
+
+  // Fetch providers tab data
+  const fetchProvidersData = async () => {
+    setProvidersLoading(true);
+    try {
+      const [providersRes, servicesRes, assignmentsRes] = await Promise.all([
+        fetch('/api/providers'),
+        fetch('/api/services'),
+        fetch(`/api/assignments?startDate=${weekStartDate}&endDate=${weekEndDate}`),
+      ]);
+
+      if (providersRes.ok) setMainProviders(await providersRes.json());
+      if (servicesRes.ok) setMainServices(await servicesRes.json());
+      if (assignmentsRes.ok) setMainAssignments(await assignmentsRes.json());
+    } catch (error) {
+      console.error('Error fetching providers data:', error);
+    } finally {
+      setProvidersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'providers') {
+      fetchProvidersData();
+    }
+  }, [activeTab, weekStartDate, weekEndDate]);
 
   // Fetch templates
   const fetchTemplates = async () => {
@@ -317,7 +353,7 @@ export default function EchoPage() {
               ← Back to Dashboard
             </Link>
             <h1 className="text-2xl font-bold" style={{ color: colors.primaryBlue }}>
-              Echo Lab Schedule
+              Testing Schedule
             </h1>
           </div>
 
@@ -434,29 +470,76 @@ export default function EchoPage() {
           </div>
         </div>
 
-        {/* Schedule Grid (includes Capacity, Calendar, and Legend) */}
-        <div className="overflow-auto max-h-[calc(100vh-200px)]">
-          {loading ? (
-            <div className="bg-white rounded-lg shadow-sm p-4 text-center py-8 text-gray-500">
-              Loading schedule...
-            </div>
-          ) : (
-            <ScheduleGrid
-              dateRange={dateRange}
-              echoTechs={echoTechs}
-              echoRooms={echoRooms}
-              assignments={assignments}
-              ptoDays={ptoDays}
-              holidays={holidays}
-              isAdmin={isAdminMode}
-              onCellClick={handleCellClick}
-              onPTOClick={handlePTOClick}
-              collapsedCategories={collapsedCategories}
-              onToggleCategory={toggleCategory}
-              onRoomReorder={handleRoomReorder}
-            />
-          )}
+        {/* Tab Navigation */}
+        <div className="bg-white rounded-lg shadow-sm mb-4">
+          <div className="flex border-b" style={{ borderColor: colors.border }}>
+            <button
+              onClick={() => setActiveTab('techs')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'techs'
+                  ? 'border-current text-[#003D7A]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+              style={activeTab === 'techs' ? { color: colors.primaryBlue } : undefined}
+            >
+              Techs
+            </button>
+            <button
+              onClick={() => setActiveTab('providers')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'providers'
+                  ? 'border-current text-[#003D7A]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+              style={activeTab === 'providers' ? { color: colors.primaryBlue } : undefined}
+            >
+              Providers
+            </button>
+          </div>
         </div>
+
+        {/* Tab Content */}
+        {activeTab === 'techs' ? (
+          <div className="overflow-auto max-h-[calc(100vh-260px)]">
+            {loading ? (
+              <div className="bg-white rounded-lg shadow-sm p-4 text-center py-8 text-gray-500">
+                Loading schedule...
+              </div>
+            ) : (
+              <ScheduleGrid
+                dateRange={dateRange}
+                echoTechs={echoTechs}
+                echoRooms={echoRooms}
+                assignments={assignments}
+                ptoDays={ptoDays}
+                holidays={holidays}
+                isAdmin={isAdminMode}
+                onCellClick={handleCellClick}
+                onPTOClick={handlePTOClick}
+                collapsedCategories={collapsedCategories}
+                onToggleCategory={toggleCategory}
+                onRoomReorder={handleRoomReorder}
+              />
+            )}
+          </div>
+        ) : (
+          <div className="overflow-auto max-h-[calc(100vh-260px)]">
+            {providersLoading ? (
+              <div className="bg-white rounded-lg shadow-sm p-4 text-center py-8 text-gray-500">
+                Loading providers schedule...
+              </div>
+            ) : (
+              <ProvidersScheduleGrid
+                weekDates={dateRange}
+                assignments={mainAssignments}
+                services={mainServices}
+                providers={mainProviders}
+                isAdmin={isAdminMode}
+                onAssignmentChange={fetchProvidersData}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* Assignment Modal */}
