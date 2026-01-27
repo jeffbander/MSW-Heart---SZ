@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Service, Provider, ScheduleAssignment, AvailabilityViolation, ProviderAvailabilityRule, ProviderLeave, DayMetadata } from '@/lib/types';
+import { Service, Provider, ScheduleAssignment, AvailabilityViolation, ProviderAvailabilityRule, ProviderLeave, DayMetadata, PTORequest } from '@/lib/types';
 import { Holiday, getHolidaysInRange, isInpatientService } from '@/lib/holidays';
 import ApplyTemplateModal from './ApplyTemplateModal';
 import AlternatingTemplateModal from './AlternatingTemplateModal';
@@ -38,6 +38,7 @@ const colors = {
   holidayPurple: '#7C3AED',
   holidayBgLight: '#EDE9FE',
   fellowPurple: '#7C3AED', // Purple color for fellows
+  ptoPendingAmber: '#F59E0B',
 };
 
 type ViewMode = 'service' | 'provider';
@@ -193,6 +194,9 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
   const [dayNoteModalData, setDayNoteModalData] = useState<{ date: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; date: string } | null>(null);
 
+  // Pending PTO requests
+  const [pendingPTORequests, setPendingPTORequests] = useState<PTORequest[]>([]);
+
   // Add PTO form state
   const [showAddPTOForm, setShowAddPTOForm] = useState(false);
   const [addPTOProvider, setAddPTOProvider] = useState<string>('');
@@ -289,6 +293,28 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     }
     fetchProviderLeaves();
   }, [dateRange]);
+
+  // Fetch pending PTO requests
+  useEffect(() => {
+    async function fetchPendingPTO() {
+      if (dateRange.length === 0) return;
+      try {
+        const res = await fetch(`/api/pto-requests?status=pending&startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`);
+        const data = await res.json();
+        setPendingPTORequests(Array.isArray(data) ? data : []);
+      } catch (e) { console.error('Error fetching pending PTO:', e); }
+    }
+    fetchPendingPTO();
+  }, [dateRange]);
+
+  const refreshPendingPTO = async () => {
+    if (dateRange.length === 0) return;
+    try {
+      const res = await fetch(`/api/pto-requests?status=pending&startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`);
+      const data = await res.json();
+      setPendingPTORequests(Array.isArray(data) ? data : []);
+    } catch (e) { console.error('Error refreshing pending PTO:', e); }
+  };
 
   // Close provider dropdown when clicking outside
   useEffect(() => {
@@ -606,6 +632,9 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
 
         // Check if provider has a blocking assignment (Consults, Burgundy, Fourth Floor Echo Lab, Offsites)
         if (hasBlockingAssignment(p.id)) return false;
+
+        // Exclude preceptor when actively precepting fellows
+        if (fellowsInRooms && preceptor && p.id === preceptor.id) return false;
 
         // Check availability rules - exclude providers with hard blocks on ANY service
         if (hasAnyHardBlock(p.id)) return false;
@@ -1035,6 +1064,71 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
       alert('Failed to add PTO. Please try again.');
       return false;
     }
+  };
+
+  // Add pending PTO for a provider
+  const handleAddPendingPTO = async (
+    providerId: string, startDate: string, endDate: string,
+    timeBlock: 'AM' | 'PM' | 'FULL', leaveType: string = 'vacation'
+  ) => {
+    try {
+      const response = await fetch('/api/pto-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider_id: providerId, start_date: startDate, end_date: endDate,
+          time_block: timeBlock, leave_type: leaveType, requested_by: 'provider',
+        }),
+      });
+      if (response.ok) {
+        await refreshPendingPTO();
+        return true;
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to add pending PTO');
+        return false;
+      }
+    } catch (error) {
+      alert('Failed to add pending PTO.');
+      return false;
+    }
+  };
+
+  // Approve a pending PTO request
+  const handleApprovePendingPTO = async (requestId: string) => {
+    if (!confirm('Approve this PTO request?')) return;
+    try {
+      const response = await fetch(`/api/pto-requests/${requestId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_name: 'Calendar Admin' }),
+      });
+      if (response.ok) {
+        await fetchData();
+        await refreshPendingPTO();
+        // Refresh provider leaves
+        const leavesRes = await fetch(`/api/leaves?startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`);
+        const leavesData = await leavesRes.json();
+        setProviderLeaves(Array.isArray(leavesData) ? leavesData : []);
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to approve PTO');
+      }
+    } catch (e) { alert('Failed to approve PTO.'); }
+  };
+
+  // Delete a pending PTO request
+  const handleDeletePendingPTO = async (requestId: string) => {
+    if (!confirm('Delete this pending PTO request?')) return;
+    try {
+      const response = await fetch(`/api/pto-requests/${requestId}`, { method: 'DELETE' });
+      if (response.ok) {
+        await refreshPendingPTO();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to delete PTO request');
+      }
+    } catch (e) { alert('Failed to delete PTO request.'); }
   };
 
   const handleToggleCovering = async (assignmentId: string, currentValue: boolean) => {
@@ -1719,6 +1813,9 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             onOpenMetadataModal={(date, timeBlock) => setMetadataModalData({ date, timeBlock })}
             getDayNote={getDayNote}
             onDateContextMenu={handleDateRightClick}
+            pendingPTORequests={pendingPTORequests}
+            onApprovePendingPTO={handleApprovePendingPTO}
+            onDeletePendingPTO={handleDeletePendingPTO}
           />
         ) : (
           <ProviderView
@@ -1738,6 +1835,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
               setProviderAssignmentServiceSearch('');
             }}
             isAdmin={isAdmin}
+            pendingPTORequests={pendingPTORequests}
           />
         )}
       </main>
@@ -1980,6 +2078,55 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                   )}
                 </div>
               )}
+
+              {/* Pending PTO Requests */}
+              {service?.name === 'PTO' && (() => {
+                const pendingForDate = pendingPTORequests.filter(req => {
+                  if (selectedCell.date < req.start_date || selectedCell.date > req.end_date) return false;
+                  return true;
+                });
+                if (pendingForDate.length === 0) return null;
+                return (
+                  <div className="mb-4">
+                    <h3 className="font-semibold mb-2 text-sm" style={{ color: colors.ptoPendingAmber }}>
+                      Pending PTO Requests:
+                    </h3>
+                    <div className="space-y-2">
+                      {pendingForDate.map(req => (
+                        <div key={req.id} className="flex items-center justify-between rounded px-3 py-2"
+                          style={{ backgroundColor: `${colors.ptoPendingAmber}15`, border: `1px solid ${colors.ptoPendingAmber}40` }}>
+                          <div>
+                            <span className="font-medium">{req.provider?.initials} - {req.provider?.name}</span>
+                            <span className="text-xs ml-2 px-1.5 py-0.5 rounded"
+                              style={{ backgroundColor: `${colors.ptoPendingAmber}20`, color: colors.ptoPendingAmber }}>
+                              Pending
+                            </span>
+                            <span className="text-xs ml-2 text-gray-500">
+                              {req.time_block === 'FULL' ? 'Full Day' : req.time_block} | {req.leave_type}
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            {isAdmin && (
+                              <>
+                                <button onClick={() => handleApprovePendingPTO(req.id)}
+                                  className="text-xs px-2 py-1 rounded text-white"
+                                  style={{ backgroundColor: colors.teal }}>
+                                  Approve
+                                </button>
+                                <button onClick={() => handleDeletePendingPTO(req.id)}
+                                  className="text-xs px-2 py-1 rounded font-bold"
+                                  style={{ color: colors.ptoRed }}>
+                                  Delete
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Room Suggestions Section */}
               {service?.requires_rooms && (() => {
@@ -2306,35 +2453,65 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                           </select>
                         </div>
 
-                        {/* Submit button */}
-                        <button
-                          onClick={async () => {
-                            if (!addPTOProvider) {
-                              alert('Please select a provider');
-                              return;
-                            }
-                            const success = await handleAddPTO(
-                              addPTOProvider,
-                              selectedCell.date,
-                              addPTOEndDate || selectedCell.date,
-                              addPTOTimeBlock,
-                              addPTOLeaveType
-                            );
-                            if (success) {
-                              setShowAddPTOForm(false);
-                              setAddPTOProvider('');
-                              setAddPTOEndDate('');
-                              setAddPTOTimeBlock('FULL');
-                              setAddPTOLeaveType('vacation');
-                              setAddPTOProviderSearch('');
-                            }
-                          }}
-                          disabled={!addPTOProvider}
-                          className="w-full px-4 py-2 rounded text-white font-medium hover:opacity-90 disabled:opacity-50"
-                          style={{ backgroundColor: colors.ptoRed }}
-                        >
-                          Create PTO
-                        </button>
+                        {/* Submit buttons */}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={async () => {
+                              if (!addPTOProvider) {
+                                alert('Please select a provider');
+                                return;
+                              }
+                              const success = await handleAddPTO(
+                                addPTOProvider,
+                                selectedCell.date,
+                                addPTOEndDate || selectedCell.date,
+                                addPTOTimeBlock,
+                                addPTOLeaveType
+                              );
+                              if (success) {
+                                setShowAddPTOForm(false);
+                                setAddPTOProvider('');
+                                setAddPTOEndDate('');
+                                setAddPTOTimeBlock('FULL');
+                                setAddPTOLeaveType('vacation');
+                                setAddPTOProviderSearch('');
+                              }
+                            }}
+                            disabled={!addPTOProvider}
+                            className="flex-1 px-4 py-2 rounded text-white font-medium hover:opacity-90 disabled:opacity-50"
+                            style={{ backgroundColor: colors.ptoRed }}
+                          >
+                            Create PTO (Approved)
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!addPTOProvider) {
+                                alert('Please select a provider');
+                                return;
+                              }
+                              const success = await handleAddPendingPTO(
+                                addPTOProvider,
+                                selectedCell.date,
+                                addPTOEndDate || selectedCell.date,
+                                addPTOTimeBlock,
+                                addPTOLeaveType
+                              );
+                              if (success) {
+                                setShowAddPTOForm(false);
+                                setAddPTOProvider('');
+                                setAddPTOEndDate('');
+                                setAddPTOTimeBlock('FULL');
+                                setAddPTOLeaveType('vacation');
+                                setAddPTOProviderSearch('');
+                              }
+                            }}
+                            disabled={!addPTOProvider}
+                            className="flex-1 px-4 py-2 rounded text-white font-medium hover:opacity-90 disabled:opacity-50"
+                            style={{ backgroundColor: colors.ptoPendingAmber }}
+                          >
+                            Submit as Pending
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2545,6 +2722,9 @@ interface ServiceViewProps {
   onOpenMetadataModal: (date: string, timeBlock: 'AM' | 'PM') => void;
   getDayNote: (date: string) => string | null;
   onDateContextMenu: (e: React.MouseEvent, date: string) => void;
+  pendingPTORequests: PTORequest[];
+  onApprovePendingPTO: (requestId: string) => void;
+  onDeletePendingPTO: (requestId: string) => void;
 }
 
 // Service grouping configuration
@@ -2582,6 +2762,9 @@ function ServiceView({
   onOpenMetadataModal,
   getDayNote,
   onDateContextMenu,
+  pendingPTORequests,
+  onApprovePendingPTO,
+  onDeletePendingPTO,
 }: ServiceViewProps) {
   // Helper to find service by name
   const findService = (name: string) => services.find((s) => s.name === name);
@@ -2949,10 +3132,28 @@ function ServiceView({
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     const needsCoverage = !isWeekend && cellAssignments.length === 0 && COVERAGE_REQUIRED_SERVICES.includes(row.name);
 
+    // Check if any assigned provider is on leave for this date/time
+    const hasProviderOnLeave = !isPTO && !isWeekend && cellAssignments.some(a => {
+      if (!a.provider_id) return false;
+      const providerPTO = getProviderPTOForDate(a.provider_id, date);
+      if (providerPTO.length === 0) {
+        // Also check providerLeaves for approved leaves not yet in assignments
+        return providerLeaves.some(leave =>
+          leave.provider_id === a.provider_id &&
+          date >= leave.start_date &&
+          date <= leave.end_date
+        );
+      }
+      // Time block overlap check
+      if (providerPTO.includes('BOTH')) return true;
+      if (row.timeBlock === 'BOTH') return true;
+      return providerPTO.includes(row.timeBlock!);
+    });
+
     let bgStyle: string | undefined;
     if (holiday && isInpatient) {
       bgStyle = colors.holidayBgLight;
-    } else if (needsCoverage) {
+    } else if (needsCoverage || hasProviderOnLeave) {
       bgStyle = '#FFEDD5'; // Light orange - needs coverage
     }
 
@@ -2967,8 +3168,16 @@ function ServiceView({
     // Filter to leaves not already shown via assignments
     const additionalPTOLeaves = approvedPTOLeaves.filter((leave: ProviderLeave) => !assignedProviderIds.has(leave.provider_id));
 
-    // Check if there's anything to show in PTO row (assignments OR approved leaves)
-    const hasPTOContent = isPTO && (cellAssignments.length > 0 || additionalPTOLeaves.length > 0);
+    // Pending PTO requests for this date
+    const pendingPTOForDate = (isPTO && !isWeekend) ? pendingPTORequests.filter((req: PTORequest) => {
+      if (date < req.start_date || date > req.end_date) return false;
+      if (assignedProviderIds.has(req.provider_id)) return false;
+      if (additionalPTOLeaves.some((l: ProviderLeave) => l.provider_id === req.provider_id)) return false;
+      return true;
+    }) : [];
+
+    // Check if there's anything to show in PTO row (assignments OR approved leaves OR pending)
+    const hasPTOContent = isPTO && (cellAssignments.length > 0 || additionalPTOLeaves.length > 0 || pendingPTOForDate.length > 0);
 
     return (
       <td
@@ -2977,7 +3186,7 @@ function ServiceView({
         style={{ borderColor: colors.border, backgroundColor: bgStyle }}
         onClick={() => handleCellClick(row.serviceId!, date, row.timeBlock!)}
       >
-        {(cellAssignments.length > 0 || (isPTO && additionalPTOLeaves.length > 0)) ? (
+        {(cellAssignments.length > 0 || (isPTO && (additionalPTOLeaves.length > 0 || pendingPTOForDate.length > 0))) ? (
           <div className="text-xs font-medium">
             {cellAssignments.map((a, idx) => {
               const providerPTO = a.provider?.id ? getProviderPTOForDate(a.provider.id, date) : [];
@@ -3065,6 +3274,19 @@ function ServiceView({
                     title="Approved PTO"
                   >
                     {leave.provider.initials}
+                  </span>
+                </span>
+              );
+            })}
+            {isPTO && pendingPTOForDate.map((req: PTORequest, idx: number) => {
+              if (!req.provider?.initials) return null;
+              const displayIdx = cellAssignments.length + additionalPTOLeaves.length + idx;
+              return (
+                <span key={`pending-${req.id}`}>
+                  {displayIdx > 0 && ', '}
+                  <span style={{ color: colors.ptoPendingAmber, fontStyle: 'italic' }}
+                    title="Pending PTO (not yet approved)">
+                    {req.provider.initials}
                   </span>
                 </span>
               );
@@ -3608,6 +3830,7 @@ interface ProviderViewProps {
   holidays: Map<string, Holiday>;
   onCellClick?: (providerId: string, providerName: string, date: string, timeBlock: string) => void;
   isAdmin?: boolean;
+  pendingPTORequests?: PTORequest[];
 }
 
 function ProviderView({
@@ -3623,6 +3846,7 @@ function ProviderView({
   holidays,
   onCellClick,
   isAdmin,
+  pendingPTORequests = [],
 }: ProviderViewProps) {
   // Helper to get base service name (strip AM/PM suffix)
   const getBaseServiceName = (serviceName: string): string => {
@@ -3745,6 +3969,11 @@ function ProviderView({
       }
     });
 
+    // Check for pending PTO for this provider/date
+    const providerPendingPTO = pendingPTORequests.filter(req =>
+      req.provider_id === provider.id && date >= req.start_date && date <= req.end_date
+    );
+
     return (
       <div className="space-y-1">
         {consolidatedServices.map((item) => {
@@ -3765,6 +3994,21 @@ function ProviderView({
             </div>
           );
         })}
+        {providerPendingPTO.map((req) => (
+          <div
+            key={`pending-${req.id}`}
+            className="text-xs px-2 py-0.5 rounded whitespace-nowrap"
+            style={{
+              backgroundColor: `${colors.ptoPendingAmber}20`,
+              color: colors.ptoPendingAmber,
+              fontStyle: 'italic',
+            }}
+            title="Pending PTO (not yet approved)"
+          >
+            <span>PTO</span>
+            <span className="text-gray-500 ml-1">{req.time_block === 'FULL' ? '' : req.time_block}</span>
+          </div>
+        ))}
       </div>
     );
   };
@@ -3999,6 +4243,9 @@ function ProviderView({
                         const service = services.find((s) => s.id === a.service_id);
                         return service?.name === 'PTO';
                       });
+                      const hasPendingPTO = pendingPTORequests.some(req =>
+                        req.provider_id === provider.id && date >= req.start_date && date <= req.end_date
+                      );
                       const hasAssignment = providerAssignments.length > 0;
 
                       return (
@@ -4008,12 +4255,16 @@ function ProviderView({
                           style={{
                             backgroundColor: hasPTO
                               ? `${colors.ptoRed}30`
+                              : hasPendingPTO
+                              ? `${colors.ptoPendingAmber}30`
                               : hasAssignment
                               ? `${colors.lightBlue}20`
                               : 'transparent',
-                            color: hasPTO ? colors.ptoRed : colors.primaryBlue,
+                            color: hasPTO ? colors.ptoRed
+                              : hasPendingPTO ? colors.ptoPendingAmber
+                              : colors.primaryBlue,
                           }}
-                          title={providerAssignments.map(a => {
+                          title={hasPendingPTO && !hasPTO ? 'Pending PTO' : providerAssignments.map(a => {
                             const service = services.find(s => s.id === a.service_id);
                             return service?.name;
                           }).join(', ')}
