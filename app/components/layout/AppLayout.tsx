@@ -2,6 +2,8 @@
 
 import { useState, useEffect, ReactNode } from 'react';
 import Sidebar from './Sidebar';
+import LoginModal from './LoginModal';
+import { useAuth } from '@/app/contexts/AuthContext';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -15,6 +17,7 @@ interface AppLayoutProps {
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  const { loading, showLoginModal, setShowLoginModal } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -52,6 +55,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
       console.error('Error setting localStorage:', e);
     }
   };
+
+  // Show loading spinner while checking auth
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: colors.lightGray }}>
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex" style={{ backgroundColor: colors.lightGray }}>
@@ -93,6 +105,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
           className="fixed inset-0 bg-black/50 z-30"
           onClick={handleToggleCollapse}
         />
+      )}
+
+      {/* Login modal overlay */}
+      {showLoginModal && (
+        <LoginModal onClose={() => setShowLoginModal(false)} />
       )}
     </div>
   );
