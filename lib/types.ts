@@ -1,3 +1,26 @@
+// ============================================
+// RBAC / AUTH TYPES
+// ============================================
+
+export type UserRole = 'super_admin' | 'scheduler_full' | 'scheduler_limited' | 'provider' | 'viewer';
+
+export interface AppUser {
+  id: string;
+  username: string;
+  display_name: string;
+  role: UserRole;
+  provider_id: string | null;
+  allowed_service_ids: string[];
+  is_active: boolean;
+  can_manage_testing: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================
+// PROVIDER & SERVICE TYPES
+// ============================================
+
 export interface Provider {
   id: string;
   name: string;

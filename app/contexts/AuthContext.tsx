@@ -23,6 +23,7 @@ interface AuthContextType {
   canCreateReports: boolean;
   canViewReports: boolean;
   canManageUsers: boolean;
+  canManageTesting: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -99,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const canCreateReports = role === 'super_admin';
   const canViewReports = true; // everyone
   const canManageUsers = role === 'super_admin';
+  const canManageTesting = isSuperAdmin || (user?.can_manage_testing ?? false);
 
   const canEditService = useCallback((serviceId: string): boolean => {
     if (!user) return false;
@@ -129,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         canCreateReports,
         canViewReports,
         canManageUsers,
+        canManageTesting,
       }}
     >
       {children}
@@ -151,7 +154,7 @@ export function useAuth() {
 export function useAdmin() {
   const auth = useAuth();
   return {
-    isAdminMode: auth.canEditSchedule,
+    isAdminMode: auth.canEditSchedule || auth.canManageTesting,
     isAuthenticated: !!auth.user,
     setAdminMode: () => {},
     authenticate: () => false,
