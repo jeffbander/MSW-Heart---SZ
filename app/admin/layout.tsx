@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAdmin } from '@/app/contexts/AdminContext';
+import { useAdmin } from '@/app/contexts/AuthContext';
 import PasscodeModal from '@/app/components/layout/PasscodeModal';
 
 const colors = {

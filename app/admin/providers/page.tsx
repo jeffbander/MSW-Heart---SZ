@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { Provider } from '@/lib/types';
-import { useAdmin } from '@/app/contexts/AdminContext';
+import { useAdmin } from '@/app/contexts/AuthContext';
 
 const colors = {
   primaryBlue: '#003D7A',

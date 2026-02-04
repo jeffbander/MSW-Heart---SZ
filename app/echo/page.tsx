@@ -6,7 +6,7 @@ import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTempla
 import { ScheduleGrid } from '@/components/schedule-grid';
 import EchoAssignmentModal from '@/app/components/EchoAssignmentModal';
 import ProvidersScheduleGrid from '@/app/components/ProvidersScheduleGrid';
-import { useAdmin } from '@/app/contexts/AdminContext';
+import { useAdmin } from '@/app/contexts/AuthContext';
 import PasscodeModal from '@/app/components/layout/PasscodeModal';
 
 const colors = {

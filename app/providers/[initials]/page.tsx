@@ -8,7 +8,7 @@ import { Provider, Service, ScheduleAssignment, PTOSummary } from '@/lib/types';
 import ProviderAvailabilityEditor from '@/app/components/ProviderAvailabilityEditor';
 import ProviderLeaveManager from '@/app/components/ProviderLeaveManager';
 import ProviderAssignmentModal from '@/app/components/ProviderAssignmentModal';
-import { useAdmin } from '@/app/contexts/AdminContext';
+import { useAdmin } from '@/app/contexts/AuthContext';
 import PasscodeModal from '@/app/components/layout/PasscodeModal';
 
 // Mount Sinai Colors
