@@ -92,6 +92,12 @@ export default function PTOCalendar({
 
   // Get requests for a specific date
   const getRequestsForDate = (date: Date) => {
+    // Skip weekends - PTO doesn't apply to Sat/Sun
+    const dayOfWeek = date.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return []; // No PTO on weekends
+    }
+
     const dateStr = formatLocalDate(date);
     return filteredRequests.filter((r) => {
       const start = new Date(r.start_date + 'T00:00:00');

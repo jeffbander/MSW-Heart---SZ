@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Provider, LeaveType, PTOTimeBlock, PTOValidationWarning } from '@/lib/types';
+import { Provider, LeaveType, PTOTimeBlock, PTOValidationWarning, PTORequest } from '@/lib/types';
+import PTOCalendar from '../components/admin/PTOCalendar';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -35,6 +36,7 @@ const timeBlocks: { value: PTOTimeBlock; label: string }[] = [
 
 export default function PTOSubmissionPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [allRequests, setAllRequests] = useState<PTORequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -71,7 +73,19 @@ export default function PTOSubmissionPage() {
 
   useEffect(() => {
     fetchProviders();
+    fetchCalendarData();
   }, []);
+
+  async function fetchCalendarData() {
+    try {
+      const res = await fetch('/api/pto-requests');
+      if (res.ok) {
+        setAllRequests(await res.json());
+      }
+    } catch (err) {
+      console.error('Error fetching PTO requests for calendar:', err);
+    }
+  }
 
   // Fetch PTO balance when provider changes
   useEffect(() => {
@@ -221,6 +235,9 @@ export default function PTOSubmissionPage() {
         } catch (emailErr) {
           console.error('Failed to send notification email:', emailErr);
         }
+
+        // Refresh calendar to show new request
+        fetchCalendarData();
       } else {
         const data = await res.json();
         setError(data.error || 'Failed to submit PTO request');
@@ -245,7 +262,7 @@ export default function PTOSubmissionPage() {
 
   return (
     <div className="min-h-screen p-6" style={{ backgroundColor: colors.lightGray }}>
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-6">
           <Link
@@ -299,7 +316,7 @@ export default function PTOSubmissionPage() {
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm p-6">
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm p-6 mb-6">
           {/* Provider Selection */}
           <div className="mb-6">
             <label className="block text-sm font-medium mb-2" style={{ color: colors.primaryBlue }}>
@@ -567,6 +584,19 @@ export default function PTOSubmissionPage() {
             </p>
           </div>
         )}
+
+        {/* PTO Calendar */}
+        <div className="bg-white rounded-xl shadow-sm p-6 mt-6">
+          <h2 className="text-lg font-semibold mb-4" style={{ color: colors.primaryBlue }}>
+            Team PTO Calendar
+          </h2>
+          <PTOCalendar
+            requests={allRequests}
+            providers={providers}
+            onApprove={() => {}}
+            onDeny={() => {}}
+          />
+        </div>
       </div>
     </div>
   );

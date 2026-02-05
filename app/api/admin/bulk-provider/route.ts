@@ -136,7 +136,7 @@ export async function POST(request: Request) {
         query = query.eq('time_block', pattern.timeBlock);
       }
 
-      const { data: assignments, error: queryError } = await query;
+      const { data: assignments, error: queryError } = await query.limit(10000);
 
       if (queryError) throw queryError;
 
@@ -176,12 +176,15 @@ export async function POST(request: Request) {
       if (affectedCount > 0) {
         const idsToDelete = filteredAssignments.map(a => a.id);
 
-        const { error: deleteError } = await supabase
-          .from('schedule_assignments')
-          .delete()
-          .in('id', idsToDelete);
-
-        if (deleteError) throw deleteError;
+        const batchSize = 500;
+        for (let i = 0; i < idsToDelete.length; i += batchSize) {
+          const batch = idsToDelete.slice(i, i + batchSize);
+          const { error: deleteError } = await supabase
+            .from('schedule_assignments')
+            .delete()
+            .in('id', batch);
+          if (deleteError) throw deleteError;
+        }
 
         // Record in change history
         const patternDesc = pattern.type === 'all'
