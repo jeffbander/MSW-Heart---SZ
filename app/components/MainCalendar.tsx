@@ -139,6 +139,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     timeBlock: string;
   } | null>(null);
   const [providerAssignmentServiceSearch, setProviderAssignmentServiceSearch] = useState('');
+  const [providerAssignmentNotes, setProviderAssignmentNotes] = useState('');
 
   // Holidays
   const [holidays, setHolidays] = useState<Map<string, Holiday>>(new Map());
@@ -453,7 +454,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
       (a) =>
         a.provider_id === providerId &&
         a.date === date &&
-        (timeBlock ? a.time_block === timeBlock : true)
+        (timeBlock ? (a.time_block === timeBlock || a.time_block === 'BOTH') : true)
     );
   };
 
@@ -982,7 +983,16 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
       });
 
       if (response.ok) {
+        const result = await response.json();
         await fetchData();
+        // If the deleted assignment was PTO, also refresh provider leaves
+        if (result.was_pto) {
+          const leavesResponse = await fetch(
+            `/api/leaves?startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`
+          );
+          const leavesData = await leavesResponse.json();
+          setProviderLeaves(Array.isArray(leavesData) ? leavesData : []);
+        }
       }
     } catch (error) {
       console.error('Error removing assignment:', error);
@@ -1587,6 +1597,28 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                 ))}
               </div>
 
+              {/* APP View Quick Toggle */}
+              <button
+                onClick={() => {
+                  const isAppView = selectedRoles.has('pa') && selectedRoles.has('np') && selectedRoles.size === 2;
+                  if (isAppView) {
+                    setSelectedRoles(new Set());
+                  } else {
+                    setSelectedRoles(new Set(['pa', 'np']));
+                  }
+                }}
+                className="px-3 py-1.5 text-xs font-medium rounded border transition-colors"
+                style={{
+                  backgroundColor: (selectedRoles.has('pa') && selectedRoles.has('np') && selectedRoles.size === 2)
+                    ? colors.teal : 'white',
+                  color: (selectedRoles.has('pa') && selectedRoles.has('np') && selectedRoles.size === 2)
+                    ? 'white' : colors.primaryBlue,
+                  borderColor: colors.teal,
+                }}
+              >
+                APP View
+              </button>
+
               {/* Capability Filter */}
               <select
                 value={capabilityFilter}
@@ -1833,9 +1865,12 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             onCellClick={(providerId, providerName, date, timeBlock) => {
               setSelectedProviderCell({ providerId, providerName, date, timeBlock });
               setProviderAssignmentServiceSearch('');
+              setProviderAssignmentNotes('');
             }}
             isAdmin={isAdmin}
             pendingPTORequests={pendingPTORequests}
+            providerLeaves={providerLeaves}
+            onDeletePTO={handleRemovePTO}
           />
         )}
       </main>
@@ -1869,6 +1904,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
               setAssignments((prev) => [...prev, newAssignment]);
               setSelectedProviderCell(null);
               setProviderAssignmentServiceSearch('');
+              setProviderAssignmentNotes('');
             } else {
               const error = await res.json();
               alert(error.error || 'Failed to create assignment');
@@ -1882,7 +1918,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
         return (
           <div
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-            onClick={() => { setSelectedProviderCell(null); setProviderAssignmentServiceSearch(''); }}
+            onClick={() => { setSelectedProviderCell(null); setProviderAssignmentServiceSearch(''); setProviderAssignmentNotes(''); }}
           >
             <div
               className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col"
@@ -1895,7 +1931,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                     Add Assignment
                   </h3>
                   <button
-                    onClick={() => { setSelectedProviderCell(null); setProviderAssignmentServiceSearch(''); }}
+                    onClick={() => { setSelectedProviderCell(null); setProviderAssignmentServiceSearch(''); setProviderAssignmentNotes(''); }}
                     className="text-gray-500 hover:text-gray-700 text-xl leading-none"
                   >
                     ×
@@ -1952,7 +1988,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                     {filteredServices.map((service) => (
                       <button
                         key={service.id}
-                        onClick={() => handleAddFromProviderView(service.id, selectedProviderCell.timeBlock === 'BOTH' ? 'AM' : selectedProviderCell.timeBlock)}
+                        onClick={() => handleAddFromProviderView(service.id, selectedProviderCell.timeBlock === 'BOTH' ? 'AM' : selectedProviderCell.timeBlock, providerAssignmentNotes || undefined)}
                         className="w-full text-left px-3 py-2 rounded hover:bg-blue-50 text-sm flex items-center justify-between group"
                       >
                         <span style={{ color: colors.primaryBlue }}>{service.name}</span>
@@ -1965,10 +2001,23 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                 )}
               </div>
 
+              {/* Notes */}
+              <div className="px-4 py-2 border-t" style={{ borderColor: colors.border }}>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Notes (optional)</label>
+                <textarea
+                  value={providerAssignmentNotes}
+                  onChange={(e) => setProviderAssignmentNotes(e.target.value)}
+                  className="w-full px-3 py-2 border rounded text-sm"
+                  style={{ borderColor: colors.border }}
+                  rows={2}
+                  placeholder="e.g. Supporting Dr. Smith, covering clinic..."
+                />
+              </div>
+
               {/* Footer */}
               <div className="px-4 py-3 border-t bg-gray-50" style={{ borderColor: colors.border }}>
                 <button
-                  onClick={() => { setSelectedProviderCell(null); setProviderAssignmentServiceSearch(''); }}
+                  onClick={() => { setSelectedProviderCell(null); setProviderAssignmentServiceSearch(''); setProviderAssignmentNotes(''); }}
                   className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-100"
                   style={{ borderColor: colors.border }}
                 >
@@ -1988,6 +2037,18 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
           selectedCell.date,
           selectedCell.timeBlock
         );
+        // Compute additionalPTOLeaves for the modal (same logic as table rendering)
+        const isPTOService = service?.name === 'PTO';
+        const dayOfWeekModal = new Date(selectedCell.date + 'T00:00:00').getDay();
+        const isWeekendModal = dayOfWeekModal === 0 || dayOfWeekModal === 6;
+        const modalApprovedPTOLeaves = (isPTOService && !isWeekendModal) ? providerLeaves.filter((leave: ProviderLeave) =>
+          selectedCell.date >= leave.start_date &&
+          selectedCell.date <= leave.end_date &&
+          leave.leave_type !== 'maternity'
+        ) : [];
+        const modalAssignedProviderIds = new Set(cellAssignments.map(a => a.provider_id));
+        const modalAdditionalPTOLeaves = modalApprovedPTOLeaves.filter((leave: ProviderLeave) => !modalAssignedProviderIds.has(leave.provider_id));
+
         const availableProviders = providers.filter((p) => {
           const hasCapability =
             !service?.required_capability ||
@@ -2076,6 +2137,44 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                       Total Rooms: {cellAssignments.reduce((sum, a) => sum + (a.room_count || 0), 0)}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Approved PTO from provider_leaves (not backed by schedule_assignments) */}
+              {isPTOService && modalAdditionalPTOLeaves.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="font-semibold mb-2 text-sm">Approved PTO (from leaves):</h3>
+                  <div className="space-y-2">
+                    {modalAdditionalPTOLeaves.map((leave: ProviderLeave) => (
+                      <div
+                        key={leave.id}
+                        className="flex items-center justify-between rounded px-3 py-2"
+                        style={{
+                          backgroundColor: `${colors.ptoRed}15`,
+                          border: `1px solid ${colors.ptoRed}40`
+                        }}
+                      >
+                        <div>
+                          <span className="font-medium">
+                            {leave.provider?.initials} - {leave.provider?.name}
+                          </span>
+                          <span className="text-xs ml-2 px-1.5 py-0.5 rounded" style={{ backgroundColor: `${colors.ptoRed}20`, color: colors.ptoRed }}>
+                            PTO
+                          </span>
+                          <span className="text-xs ml-2 text-gray-500">
+                            {leave.leave_type}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleRemovePTO(leave.provider_id, selectedCell.date, 'BOTH')}
+                          className="font-bold px-2 hover:opacity-70"
+                          style={{ color: colors.ptoRed }}
+                        >
+                          Delete PTO
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -3831,6 +3930,8 @@ interface ProviderViewProps {
   onCellClick?: (providerId: string, providerName: string, date: string, timeBlock: string) => void;
   isAdmin?: boolean;
   pendingPTORequests?: PTORequest[];
+  providerLeaves?: ProviderLeave[];
+  onDeletePTO?: (providerId: string, date: string, timeBlock: string) => void;
 }
 
 function ProviderView({
@@ -3847,6 +3948,8 @@ function ProviderView({
   onCellClick,
   isAdmin,
   pendingPTORequests = [],
+  providerLeaves = [],
+  onDeletePTO,
 }: ProviderViewProps) {
   // Helper to get base service name (strip AM/PM suffix)
   const getBaseServiceName = (serviceName: string): string => {
@@ -3861,7 +3964,21 @@ function ProviderView({
   const renderProviderCell = (provider: Provider, date: string, timeBlock?: string) => {
     const providerAssignments = getProviderAssignments(provider.id, date, timeBlock);
 
-    if (providerAssignments.length === 0) {
+    // Check for approved PTO leaves not already in schedule_assignments
+    const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const hasPTOAssignment = providerAssignments.some(a => {
+      const svc = services.find(s => s.id === a.service_id);
+      return a.is_pto || svc?.name === 'PTO';
+    });
+    const hasApprovedLeave = !isWeekend && !hasPTOAssignment && providerLeaves.some(leave =>
+      leave.provider_id === provider.id &&
+      date >= leave.start_date &&
+      date <= leave.end_date &&
+      leave.leave_type !== 'maternity'
+    );
+
+    if (providerAssignments.length === 0 && !hasApprovedLeave) {
       return <span className="text-gray-400">-</span>;
     }
 
@@ -3877,18 +3994,62 @@ function ProviderView({
             return (
               <div
                 key={assignment.id}
-                className="text-xs px-2 py-0.5 rounded"
+                className="text-xs px-2 py-0.5 rounded group relative flex items-center justify-between"
                 style={{
                   backgroundColor: isPTO ? `${colors.ptoRed}20` : `${colors.lightBlue}20`,
                   color: isPTO ? colors.ptoRed : colors.primaryBlue,
                 }}
                 title={hasNotes ? `${service?.name}: ${assignment.notes}` : service?.name}
               >
-                <span>{displayName}</span>
-                {hasNotes && <span className="text-gray-500 ml-1">*</span>}
+                <div>
+                  <span>{displayName}</span>
+                  {hasNotes && (
+                    <div className="text-[10px] text-gray-500 truncate max-w-[120px]" title={assignment.notes || ''}>
+                      {assignment.notes}
+                    </div>
+                  )}
+                </div>
+                {isPTO && isAdmin && onDeletePTO && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeletePTO(provider.id, date, timeBlock);
+                    }}
+                    className="hidden group-hover:inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[10px] font-bold leading-none ml-1 flex-shrink-0"
+                    style={{ backgroundColor: colors.ptoRed }}
+                    title="Delete PTO"
+                  >
+                    x
+                  </button>
+                )}
               </div>
             );
           })}
+          {hasApprovedLeave && (
+            <div
+              className="text-xs px-2 py-0.5 rounded group relative flex items-center justify-between"
+              style={{
+                backgroundColor: `${colors.ptoRed}20`,
+                color: colors.ptoRed,
+              }}
+              title="PTO (from approved leave)"
+            >
+              <span>PTO</span>
+              {isAdmin && onDeletePTO && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeletePTO(provider.id, date, 'BOTH');
+                  }}
+                  className="hidden group-hover:inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[10px] font-bold leading-none ml-1 flex-shrink-0"
+                  style={{ backgroundColor: colors.ptoRed }}
+                  title="Delete PTO"
+                >
+                  x
+                </button>
+              )}
+            </div>
+          )}
         </div>
       );
     }
@@ -3981,19 +4142,63 @@ function ProviderView({
           return (
             <div
               key={item.key}
-              className="text-xs px-2 py-0.5 rounded whitespace-nowrap"
+              className="text-xs px-2 py-0.5 rounded whitespace-nowrap group flex items-center justify-between"
               style={{
                 backgroundColor: item.isPTO ? `${colors.ptoRed}20` : `${colors.lightBlue}20`,
                 color: item.isPTO ? colors.ptoRed : colors.primaryBlue,
               }}
               title={hasNotes ? `${item.displayName}: ${item.notes}` : item.displayName}
             >
-              <span>{item.displayName}</span>
-              {item.timeIndicator && <span className="text-gray-500 ml-1">{item.timeIndicator}</span>}
-              {hasNotes && <span className="text-gray-500 ml-1">*</span>}
+              <div>
+                <span>{item.displayName}</span>
+                {item.timeIndicator && <span className="text-gray-500 ml-1">{item.timeIndicator}</span>}
+                {hasNotes && (
+                  <div className="text-[10px] text-gray-500 truncate max-w-[120px]" title={item.notes || ''}>
+                    {item.notes}
+                  </div>
+                )}
+              </div>
+              {item.isPTO && isAdmin && onDeletePTO && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeletePTO(provider.id, date, 'BOTH');
+                  }}
+                  className="hidden group-hover:inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[10px] font-bold leading-none ml-1 flex-shrink-0"
+                  style={{ backgroundColor: colors.ptoRed }}
+                  title="Delete PTO"
+                >
+                  x
+                </button>
+              )}
             </div>
           );
         })}
+        {hasApprovedLeave && (
+          <div
+            className="text-xs px-2 py-0.5 rounded whitespace-nowrap group flex items-center justify-between"
+            style={{
+              backgroundColor: `${colors.ptoRed}20`,
+              color: colors.ptoRed,
+            }}
+            title="PTO (from approved leave)"
+          >
+            <span>PTO</span>
+            {isAdmin && onDeletePTO && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeletePTO(provider.id, date, 'BOTH');
+                }}
+                className="hidden group-hover:inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[10px] font-bold leading-none ml-1 flex-shrink-0"
+                style={{ backgroundColor: colors.ptoRed }}
+                title="Delete PTO"
+              >
+                x
+              </button>
+            )}
+          </div>
+        )}
         {providerPendingPTO.map((req) => (
           <div
             key={`pending-${req.id}`}

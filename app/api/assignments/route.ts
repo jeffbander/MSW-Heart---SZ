@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { isHoliday, isInpatientService } from '@/lib/holidays';
 import { checkProviderAvailability } from '@/lib/availability';
+import { cascadePTODeletion } from '@/lib/ptoCascade';
 
 export async function GET(request: Request) {
   try {
@@ -236,6 +237,17 @@ export async function DELETE(request: Request) {
       );
     }
 
+    // Pre-lookup the assignment to check if it's PTO
+    const { data: assignment, error: lookupError } = await supabase
+      .from('schedule_assignments')
+      .select('id, provider_id, date, is_pto')
+      .eq('id', id)
+      .single();
+
+    if (lookupError) throw lookupError;
+
+    const wasPTO = assignment?.is_pto === true;
+
     const { error } = await supabase
       .from('schedule_assignments')
       .delete()
@@ -243,7 +255,12 @@ export async function DELETE(request: Request) {
 
     if (error) throw error;
 
-    return NextResponse.json({ success: true });
+    // If this was a PTO assignment, cascade-delete related records
+    if (wasPTO && assignment) {
+      await cascadePTODeletion(assignment.provider_id, assignment.date);
+    }
+
+    return NextResponse.json({ success: true, was_pto: wasPTO });
   } catch (error) {
     console.error('Error deleting assignment:', error);
     return NextResponse.json(
