@@ -33,10 +33,10 @@ export async function GET(
     const yearParam = searchParams.get('year');
     const year = yearParam ? parseInt(yearParam) : new Date().getFullYear();
 
-    // Get provider with role
+    // Get provider with role and work_days
     const { data: provider, error: providerError } = await supabase
       .from('providers')
-      .select('id, name, initials, role')
+      .select('id, name, initials, role, work_days')
       .eq('id', id)
       .single();
 
@@ -111,12 +111,15 @@ export async function GET(
       .gte('start_date', `${year}-01-01`)
       .lte('end_date', `${year}-12-31`);
 
+    const workDays = provider.work_days || [1, 2, 3, 4, 5];
+
     let daysUsed = 0;
     for (const req of approvedRequests || []) {
       daysUsed += calculatePTODays(
         req.start_date,
         req.end_date,
-        req.time_block as PTOTimeBlock
+        req.time_block as PTOTimeBlock,
+        workDays
       );
     }
 
@@ -134,7 +137,8 @@ export async function GET(
       pendingDays += calculatePTODays(
         req.start_date,
         req.end_date,
-        req.time_block as PTOTimeBlock
+        req.time_block as PTOTimeBlock,
+        workDays
       );
     }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { createPTOScheduleAssignments, createPTORequestAndLeave } from '@/lib/ptoScheduleAssignments';
 
 // GET - Fetch all leaves for a provider
 export async function GET(
@@ -73,6 +74,43 @@ export async function POST(
       .single();
 
     if (error) throw error;
+
+    // For vacation leaves, also create pto_requests + schedule_assignments
+    // so PTO appears on PTO calendar, main calendar, and PTO balance
+    if (leave_type === 'vacation') {
+      // Create auto-approved pto_request (for PTO calendar + balance)
+      const { error: ptoReqError } = await supabase
+        .from('pto_requests')
+        .insert({
+          provider_id: id,
+          start_date,
+          end_date,
+          leave_type,
+          time_block: 'FULL',
+          reason: reason || null,
+          status: 'approved',
+          requested_by: 'admin',
+          reviewed_at: new Date().toISOString(),
+          reviewed_by_admin_name: 'Auto-approved (provider leave entry)',
+        });
+
+      if (ptoReqError) {
+        console.error('Error creating pto_request from leave:', ptoReqError);
+      }
+
+      // Create schedule_assignments (for main calendar)
+      const assignmentResult = await createPTOScheduleAssignments({
+        provider_id: id,
+        start_date,
+        end_date,
+        time_block: 'FULL',
+      });
+
+      if (assignmentResult.error) {
+        console.error('Error creating PTO schedule_assignments from leave:', assignmentResult.error);
+      }
+    }
+
     return NextResponse.json(data, { status: 201 });
   } catch (error) {
     console.error('Error creating provider leave:', error);

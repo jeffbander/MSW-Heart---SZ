@@ -13,22 +13,28 @@ function formatLocalDate(date: Date): string {
  * Calculate the number of PTO days for a given date range
  * Excludes weekends (Saturday, Sunday) and holidays
  * Half-day (AM/PM) requests count as 0.5 days
+ * If work_days is provided, only counts days matching the provider's work schedule
  */
 export function calculatePTODays(
   startDate: string,
   endDate: string,
-  timeBlock: PTOTimeBlock
+  timeBlock: PTOTimeBlock,
+  work_days?: number[] // JS day-of-week: 1=Mon, 2=Tue, ... 5=Fri
 ): number {
   let days = 0;
   const current = new Date(startDate + 'T00:00:00');
   const end = new Date(endDate + 'T00:00:00');
 
   while (current <= end) {
-    const dayOfWeek = current.getDay();
+    const dayOfWeek = current.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
     const dateStr = formatLocalDate(current);
 
-    // Skip weekends (0=Sunday, 6=Saturday)
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+    // Check if this is a valid work day
+    const isWorkDay = work_days
+      ? work_days.includes(dayOfWeek) // Use provider-specific work days
+      : (dayOfWeek !== 0 && dayOfWeek !== 6); // Default: skip weekends
+
+    if (isWorkDay) {
       // Skip holidays
       if (!isHoliday(dateStr)) {
         if (timeBlock === 'FULL') {
@@ -45,8 +51,13 @@ export function calculatePTODays(
 
 /**
  * Get all weekdays (excluding weekends and holidays) in a date range
+ * If work_days is provided, only returns days matching the provider's work schedule
  */
-export function getWorkdaysInRange(startDate: string, endDate: string): string[] {
+export function getWorkdaysInRange(
+  startDate: string,
+  endDate: string,
+  work_days?: number[] // JS day-of-week: 1=Mon, 2=Tue, ... 5=Fri
+): string[] {
   const workdays: string[] = [];
   const current = new Date(startDate + 'T00:00:00');
   const end = new Date(endDate + 'T00:00:00');
@@ -55,9 +66,11 @@ export function getWorkdaysInRange(startDate: string, endDate: string): string[]
     const dayOfWeek = current.getDay();
     const dateStr = formatLocalDate(current);
 
-    // Skip weekends
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      // Skip holidays
+    const isWorkDay = work_days
+      ? work_days.includes(dayOfWeek)
+      : (dayOfWeek !== 0 && dayOfWeek !== 6);
+
+    if (isWorkDay) {
       if (!isHoliday(dateStr)) {
         workdays.push(dateStr);
       }

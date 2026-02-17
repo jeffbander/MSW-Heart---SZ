@@ -52,8 +52,15 @@ export default function ProvidersAdminPage() {
     initials: '',
     role: 'attending',
     default_room_count: 0,
-    capabilities: [] as string[]
+    capabilities: [] as string[],
+    work_days: [1, 2, 3, 4, 5] as number[]
   });
+  const [workDaysSuggestion, setWorkDaysSuggestion] = useState<{
+    suggested_days: number[];
+    suggestion_text: string;
+    confidence: string;
+  } | null>(null);
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
 
   // PTO Balance management state
   const [ptoBalances, setPtoBalances] = useState<Record<string, PTOBalance>>({});
@@ -231,8 +238,10 @@ export default function ProvidersAdminPage() {
       initials: '',
       role: 'attending',
       default_room_count: 0,
-      capabilities: []
+      capabilities: [],
+      work_days: [1, 2, 3, 4, 5]
     });
+    setWorkDaysSuggestion(null);
   };
 
   const startEdit = (provider: Provider) => {
@@ -242,8 +251,40 @@ export default function ProvidersAdminPage() {
       initials: provider.initials,
       role: provider.role,
       default_room_count: provider.default_room_count,
-      capabilities: provider.capabilities
+      capabilities: provider.capabilities,
+      work_days: provider.work_days || [1, 2, 3, 4, 5]
     });
+    // Fetch work days suggestion
+    fetchWorkDaysSuggestion(provider.id);
+  };
+
+  const fetchWorkDaysSuggestion = async (providerId: string) => {
+    setLoadingSuggestion(true);
+    setWorkDaysSuggestion(null);
+    try {
+      const response = await fetch(`/api/providers/${providerId}/work-days-suggestion`);
+      if (response.ok) {
+        const data = await response.json();
+        setWorkDaysSuggestion(data);
+      }
+    } catch (error) {
+      console.error('Error fetching work days suggestion:', error);
+    } finally {
+      setLoadingSuggestion(false);
+    }
+  };
+
+  const toggleWorkDay = (day: number) => {
+    setFormData(prev => ({
+      ...prev,
+      work_days: prev.work_days.includes(day)
+        ? prev.work_days.filter(d => d !== day)
+        : [...prev.work_days, day].sort((a, b) => a - b)
+    }));
+  };
+
+  const WORK_DAY_LABELS: Record<number, string> = {
+    1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri'
   };
 
   const toggleCapability = (cap: string) => {
@@ -375,6 +416,54 @@ export default function ProvidersAdminPage() {
                     style={{ borderColor: colors.border }}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">Work Days</label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {[1, 2, 3, 4, 5].map((day) => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => toggleWorkDay(day)}
+                      className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                        formData.work_days.includes(day) ? 'text-white' : 'bg-white'
+                      }`}
+                      style={{
+                        backgroundColor: formData.work_days.includes(day) ? colors.teal : 'white',
+                        borderColor: colors.teal,
+                        color: formData.work_days.includes(day) ? 'white' : colors.primaryBlue
+                      }}
+                    >
+                      {WORK_DAY_LABELS[day]}
+                    </button>
+                  ))}
+                </div>
+                {editingProvider && (
+                  <div className="text-xs text-gray-500">
+                    {loadingSuggestion ? (
+                      <span>Analyzing schedule history...</span>
+                    ) : workDaysSuggestion ? (
+                      <div className="flex items-center gap-2">
+                        <span>{workDaysSuggestion.suggestion_text}</span>
+                        {workDaysSuggestion.confidence === 'high' &&
+                          JSON.stringify(workDaysSuggestion.suggested_days) !== JSON.stringify(formData.work_days) && (
+                          <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({
+                              ...prev,
+                              work_days: workDaysSuggestion.suggested_days
+                            }))}
+                            className="px-2 py-0.5 rounded text-xs font-medium text-white"
+                            style={{ backgroundColor: colors.teal }}
+                          >
+                            Apply
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               <div>

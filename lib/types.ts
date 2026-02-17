@@ -28,6 +28,7 @@ export interface Provider {
   role: string;
   default_room_count: number;
   capabilities: string[];
+  work_days: number[]; // JS day-of-week: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri
   created_at: string;
 }
 

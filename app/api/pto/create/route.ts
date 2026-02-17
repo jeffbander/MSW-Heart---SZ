@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import {
+  createPTOScheduleAssignments,
+  getProviderWorkdays,
+} from '@/lib/ptoScheduleAssignments';
 
 // POST /api/pto/create - Create PTO in all related tables
 export async function POST(request: Request) {
@@ -32,28 +36,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get weekdays in the range (skip weekends)
-    const weekdays = getWeekdaysInRange(start_date, end_date);
+    // Get provider's work days in range
+    const weekdays = await getProviderWorkdays(provider_id, start_date, end_date);
 
     if (weekdays.length === 0) {
       return NextResponse.json(
-        { error: 'No weekdays in the selected date range' },
+        { error: 'No work days in the selected date range' },
         { status: 400 }
-      );
-    }
-
-    // Get the PTO service ID
-    const { data: ptoService, error: serviceError } = await supabase
-      .from('services')
-      .select('id')
-      .eq('name', 'PTO')
-      .single();
-
-    if (serviceError || !ptoService) {
-      console.error('Error finding PTO service:', serviceError);
-      return NextResponse.json(
-        { error: 'PTO service not found' },
-        { status: 500 }
       );
     }
 
@@ -105,54 +94,15 @@ export async function POST(request: Request) {
       results.provider_leave_created = true;
     }
 
-    // 3. Create schedule_assignments for each weekday
-    // Determine time blocks to create assignments for
-    const timeBlocks = time_block === 'FULL' ? ['BOTH'] : [time_block];
+    // 3. Create schedule_assignments using shared utility
+    const assignmentResult = await createPTOScheduleAssignments({
+      provider_id,
+      start_date,
+      end_date,
+      time_block,
+    });
 
-    // Check for existing PTO assignments to avoid duplicates
-    const { data: existingAssignments } = await supabase
-      .from('schedule_assignments')
-      .select('date, time_block')
-      .eq('provider_id', provider_id)
-      .eq('service_id', ptoService.id)
-      .eq('is_pto', true)
-      .in('date', weekdays);
-
-    const existingSet = new Set(
-      (existingAssignments || []).map(a => `${a.date}-${a.time_block}`)
-    );
-
-    const assignmentsToCreate = [];
-    for (const date of weekdays) {
-      for (const tb of timeBlocks) {
-        const key = `${date}-${tb}`;
-        if (!existingSet.has(key)) {
-          assignmentsToCreate.push({
-            provider_id,
-            service_id: ptoService.id,
-            date,
-            time_block: tb,
-            room_count: 0,
-            is_pto: true,
-            is_covering: false,
-            notes: null,
-          });
-        }
-      }
-    }
-
-    if (assignmentsToCreate.length > 0) {
-      const { data: createdAssignments, error: assignmentError } = await supabase
-        .from('schedule_assignments')
-        .insert(assignmentsToCreate)
-        .select();
-
-      if (assignmentError) {
-        console.error('Error creating schedule_assignments:', assignmentError);
-      } else {
-        results.schedule_assignments_created = createdAssignments?.length || 0;
-      }
-    }
+    results.schedule_assignments_created = assignmentResult.created;
 
     return NextResponse.json({
       success: true,
@@ -166,30 +116,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-}
-
-// Helper to get weekdays in a date range (excludes Sat and Sun)
-function getWeekdaysInRange(startDate: string, endDate: string): string[] {
-  const weekdays: string[] = [];
-  const current = new Date(startDate + 'T00:00:00');
-  const end = new Date(endDate + 'T00:00:00');
-
-  while (current <= end) {
-    const dayOfWeek = current.getDay();
-    // Skip Saturday (6) and Sunday (0)
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      weekdays.push(formatLocalDate(current));
-    }
-    current.setDate(current.getDate() + 1);
-  }
-
-  return weekdays;
-}
-
-// Helper to format date as YYYY-MM-DD
-function formatLocalDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 }

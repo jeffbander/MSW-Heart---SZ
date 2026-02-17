@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { sendPTOApprovalEmail } from '@/lib/email';
+import { createPTOScheduleAssignments } from '@/lib/ptoScheduleAssignments';
 
 // POST /api/pto-requests/[id]/approve - Approve a PTO request
 export async function POST(
@@ -77,6 +78,22 @@ export async function POST(
     if (leaveError) {
       console.error('Error creating provider_leave:', leaveError);
       // Don't fail - the approval was successful, we'll log the error
+    }
+
+    // Create schedule_assignments for vacation leave so PTO shows on main calendar
+    if (request_data.leave_type === 'vacation') {
+      const assignmentResult = await createPTOScheduleAssignments({
+        provider_id: request_data.provider_id,
+        start_date: request_data.start_date,
+        end_date: request_data.end_date,
+        time_block: request_data.time_block,
+      });
+
+      if (assignmentResult.error) {
+        console.error('Error creating PTO schedule_assignments:', assignmentResult.error);
+      } else {
+        console.log(`Created ${assignmentResult.created} PTO schedule_assignments for approval`);
+      }
     }
 
     // Send email notification to provider

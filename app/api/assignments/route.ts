@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { isHoliday, isInpatientService } from '@/lib/holidays';
 import { checkProviderAvailability } from '@/lib/availability';
 import { cascadePTODeletion } from '@/lib/ptoCascade';
+import { createPTORequestAndLeave } from '@/lib/ptoScheduleAssignments';
 
 export async function GET(request: Request) {
   try {
@@ -145,6 +146,23 @@ export async function POST(request: Request) {
       `);
 
     if (error) throw error;
+
+    // If this is a PTO assignment, also create pto_requests + provider_leaves
+    // so PTO shows on PTO team calendar and counts toward PTO balance
+    if (body.is_pto && body.provider_id) {
+      const ptoTimeBlock = body.time_block === 'BOTH' ? 'FULL' : body.time_block;
+      const ptoResult = await createPTORequestAndLeave({
+        provider_id: body.provider_id,
+        start_date: body.date,
+        end_date: body.date,
+        time_block: ptoTimeBlock,
+        leave_type: 'vacation',
+      });
+
+      if (!ptoResult.pto_request_created || !ptoResult.provider_leave_created) {
+        console.error('Partial PTO sync from assignment:', ptoResult);
+      }
+    }
 
     console.log('Created assignment result:', JSON.stringify(data, null, 2));
     return NextResponse.json(data);
