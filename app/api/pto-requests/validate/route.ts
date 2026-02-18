@@ -22,11 +22,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // Calculate PTO days (excluding weekends and holidays)
+    // Fetch provider's work_days for accurate PTO calculation
+    const { data: providerWorkDays } = await supabase
+      .from('providers')
+      .select('work_days')
+      .eq('id', provider_id)
+      .single();
+    const workDays = providerWorkDays?.work_days || [1, 2, 3, 4, 5];
+
+    // Calculate PTO days (excluding non-work days)
     const calculated_days = calculatePTODays(
       start_date,
       end_date,
-      time_block as PTOTimeBlock
+      time_block as PTOTimeBlock,
+      workDays
     );
 
     // Check for overlapping PTO from other providers
@@ -256,7 +265,7 @@ export async function POST(request: Request) {
 
     let daysUsed = 0;
     for (const req of approvedRequests || []) {
-      daysUsed += calculatePTODays(req.start_date, req.end_date, req.time_block as PTOTimeBlock);
+      daysUsed += calculatePTODays(req.start_date, req.end_date, req.time_block as PTOTimeBlock, workDays);
     }
 
     const daysRemaining = totalAvailable - daysUsed;

@@ -20,7 +20,7 @@ export async function GET(
     // Verify provider exists
     const { data: provider, error: providerError } = await supabase
       .from('providers')
-      .select('id, name, initials')
+      .select('id, name, initials, work_days')
       .eq('id', id)
       .single();
 
@@ -47,6 +47,7 @@ export async function GET(
     if (requestsError) throw requestsError;
 
     // Calculate total PTO days and breakdown by type
+    const workDays = provider.work_days || [1, 2, 3, 4, 5];
     let totalPTODays = 0;
     const requestsByType: Record<string, number> = {};
 
@@ -54,7 +55,8 @@ export async function GET(
       const days = calculatePTODays(
         req.start_date,
         req.end_date,
-        req.time_block as PTOTimeBlock
+        req.time_block as PTOTimeBlock,
+        workDays
       );
 
       totalPTODays += days;
