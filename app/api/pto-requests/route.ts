@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { createPTOScheduleAssignments } from '@/lib/ptoScheduleAssignments';
 
 // GET /api/pto-requests - List all PTO requests with optional filters
 export async function GET(request: Request) {
@@ -102,7 +103,7 @@ export async function POST(request: Request) {
 
     if (error) throw error;
 
-    // If admin-submitted (auto-approved), also create provider_leave entry
+    // If admin-submitted (auto-approved), also create provider_leave + schedule_assignments
     if (isAdminSubmission) {
       const { error: leaveError } = await supabase
         .from('provider_leaves')
@@ -116,7 +117,20 @@ export async function POST(request: Request) {
 
       if (leaveError) {
         console.error('Error creating provider_leave:', leaveError);
-        // Don't fail the request, the PTO request was created successfully
+      }
+
+      // Create schedule_assignments for vacation leave (filtered by provider work_days)
+      if (leave_type === 'vacation') {
+        const assignmentResult = await createPTOScheduleAssignments({
+          provider_id,
+          start_date,
+          end_date,
+          time_block,
+        });
+
+        if (assignmentResult.error) {
+          console.error('Error creating PTO schedule_assignments:', assignmentResult.error);
+        }
       }
     }
 
