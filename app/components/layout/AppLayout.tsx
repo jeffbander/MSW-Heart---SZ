@@ -68,7 +68,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   return (
     <div className="min-h-screen flex" style={{ backgroundColor: colors.lightGray }}>
       {/* Sidebar */}
-      <div className={isMobile && !isCollapsed ? 'fixed inset-y-0 left-0 z-40' : ''}>
+      <div className={isMobile && !isCollapsed ? 'fixed inset-y-0 left-0 z-50' : ''}>
         <Sidebar isCollapsed={isCollapsed} onToggleCollapse={handleToggleCollapse} onNavigate={isMobile ? () => setIsCollapsed(true) : undefined} />
       </div>
 
@@ -76,7 +76,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       {isCollapsed && (
         <button
           onClick={handleToggleCollapse}
-          className="fixed top-4 left-4 z-40 p-2 rounded-lg shadow-lg transition-colors hover:bg-gray-100"
+          className="fixed top-4 left-4 z-50 p-3 rounded-lg shadow-lg transition-colors hover:bg-gray-100"
           style={{ backgroundColor: 'white' }}
           title="Expand sidebar"
         >
@@ -104,7 +104,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       {/* Mobile overlay when sidebar is open */}
       {isMobile && !isCollapsed && (
         <div
-          className="fixed inset-0 bg-black/50 z-30"
+          className="fixed inset-0 bg-black/50 z-40"
           onClick={handleToggleCollapse}
         />
       )}
