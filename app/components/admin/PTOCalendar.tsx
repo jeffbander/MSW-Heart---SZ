@@ -266,9 +266,12 @@ export default function PTOCalendar({
               <div
                 key={idx}
                 className={`min-h-[100px] p-1 border-b border-r cursor-pointer ${
-                  !isInMonth ? 'bg-gray-50' : holiday ? 'bg-red-50' : isWeekend ? 'bg-gray-50' : 'bg-white'
+                  !isInMonth ? 'bg-gray-50' : isWeekend ? 'bg-gray-50' : 'bg-white'
                 }`}
-                style={{ borderColor: colors.border }}
+                style={{
+                  borderColor: colors.border,
+                  ...(isInMonth && holiday ? { backgroundColor: '#EDE9FE' } : {}),
+                }}
                 onClick={() => dayRequests.length > 0 && setSelectedDate(date)}
               >
                 <div
@@ -287,7 +290,7 @@ export default function PTOCalendar({
 
                 {/* Holiday label */}
                 {holiday && isInMonth && (
-                  <div className="text-xs font-medium text-red-600 px-1 truncate" title={holiday.name}>
+                  <div className="text-xs font-medium px-1 truncate" style={{ color: '#7C3AED' }} title={holiday.name}>
                     {holiday.name}
                   </div>
                 )}

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { isHoliday } from '@/lib/holidays';
 
 // Helper to format date as YYYY-MM-DD
 function formatLocalDate(date: Date): string {
@@ -9,7 +10,7 @@ function formatLocalDate(date: Date): string {
 }
 
 /**
- * Get weekdays in a date range (skips Sat/Sun).
+ * Get work days in a date range (skips weekends and holidays).
  * If work_days is provided, only returns days matching those day-of-week numbers.
  */
 export function getWeekdaysInRange(
@@ -23,12 +24,13 @@ export function getWeekdaysInRange(
 
   while (current <= end) {
     const dayOfWeek = current.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
+    const dateStr = formatLocalDate(current);
     const isWorkDay = work_days
       ? work_days.includes(dayOfWeek)
       : (dayOfWeek !== 0 && dayOfWeek !== 6);
 
-    if (isWorkDay) {
-      weekdays.push(formatLocalDate(current));
+    if (isWorkDay && !isHoliday(dateStr)) {
+      weekdays.push(dateStr);
     }
     current.setDate(current.getDate() + 1);
   }
