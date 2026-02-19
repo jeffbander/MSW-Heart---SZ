@@ -160,12 +160,12 @@ export default function PTOCalendar({
   return (
     <div>
       {/* Filters */}
-      <div className="mb-4 flex flex-wrap gap-4 items-center">
+      <div className="mb-4 flex flex-col md:flex-row flex-wrap gap-4 items-start md:items-center">
         <div>
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-3 py-2 rounded border text-sm"
+            className="px-3 py-2 rounded border text-base md:text-sm"
             style={{ borderColor: colors.border }}
           >
             <option value="all">All Status</option>
@@ -178,7 +178,7 @@ export default function PTOCalendar({
           <select
             value={filterProviderId}
             onChange={(e) => setFilterProviderId(e.target.value)}
-            className="px-3 py-2 rounded border text-sm"
+            className="px-3 py-2 rounded border text-base md:text-sm"
             style={{ borderColor: colors.border }}
           >
             <option value="">All Providers</option>
@@ -191,7 +191,7 @@ export default function PTOCalendar({
         </div>
 
         {/* Legend */}
-        <div className="ml-auto flex items-center gap-4 text-sm">
+        <div className="md:ml-auto flex items-center gap-4 text-sm">
           <div className="flex items-center gap-1">
             <div
               className="w-3 h-3 rounded"
@@ -220,7 +220,7 @@ export default function PTOCalendar({
       <div className="flex items-center justify-between mb-4">
         <button
           onClick={() => navigateMonth(-1)}
-          className="px-3 py-1 rounded border hover:bg-gray-50"
+          className="px-4 md:px-3 py-2 md:py-1 rounded border hover:bg-gray-50"
           style={{ borderColor: colors.border }}
         >
           ← Prev
@@ -230,7 +230,7 @@ export default function PTOCalendar({
         </h3>
         <button
           onClick={() => navigateMonth(1)}
-          className="px-3 py-1 rounded border hover:bg-gray-50"
+          className="px-4 md:px-3 py-2 md:py-1 rounded border hover:bg-gray-50"
           style={{ borderColor: colors.border }}
         >
           Next →
@@ -238,6 +238,8 @@ export default function PTOCalendar({
       </div>
 
       {/* Calendar Grid */}
+      <div className="overflow-x-auto">
+      <div className="min-w-[600px] md:min-w-0">
       <div className="border rounded-lg overflow-hidden" style={{ borderColor: colors.border }}>
         {/* Day Headers */}
         <div className="grid grid-cols-7 bg-gray-50">
@@ -265,7 +267,7 @@ export default function PTOCalendar({
             return (
               <div
                 key={idx}
-                className={`min-h-[100px] p-1 border-b border-r cursor-pointer ${
+                className={`min-h-[80px] md:min-h-[100px] p-1 border-b border-r cursor-pointer ${
                   !isInMonth ? 'bg-gray-50' : isWeekend ? 'bg-gray-50' : 'bg-white'
                 }`}
                 style={{
@@ -318,6 +320,8 @@ export default function PTOCalendar({
             );
           })}
         </div>
+      </div>
+      </div>
       </div>
 
       {/* Request Detail Modal */}
@@ -391,7 +395,7 @@ export default function PTOCalendar({
                       onApprove(selectedRequest);
                       setSelectedRequest(null);
                     }}
-                    className="flex-1 py-2 rounded text-white font-medium"
+                    className="flex-1 py-3 md:py-2 rounded text-white font-medium"
                     style={{ backgroundColor: colors.success }}
                   >
                     Approve
@@ -401,7 +405,7 @@ export default function PTOCalendar({
                       onDeny(selectedRequest);
                       setSelectedRequest(null);
                     }}
-                    className="flex-1 py-2 rounded text-white font-medium"
+                    className="flex-1 py-3 md:py-2 rounded text-white font-medium"
                     style={{ backgroundColor: colors.error }}
                   >
                     Deny
@@ -416,7 +420,7 @@ export default function PTOCalendar({
                       setSelectedRequest(null);
                     }
                   }}
-                  className="flex-1 py-2 rounded border font-medium hover:bg-gray-50"
+                  className="flex-1 py-3 md:py-2 rounded border font-medium hover:bg-gray-50"
                   style={{ borderColor: colors.error, color: colors.error }}
                 >
                   Delete Request
@@ -424,7 +428,7 @@ export default function PTOCalendar({
               )}
               <button
                 onClick={() => setSelectedRequest(null)}
-                className="flex-1 py-2 rounded border font-medium hover:bg-gray-50"
+                className="flex-1 py-3 md:py-2 rounded border font-medium hover:bg-gray-50"
                 style={{ borderColor: colors.border }}
               >
                 Close
@@ -484,7 +488,7 @@ export default function PTOCalendar({
             <div className="flex justify-end">
               <button
                 onClick={() => setSelectedDate(null)}
-                className="px-4 py-2 rounded border font-medium hover:bg-gray-50"
+                className="px-4 py-3 md:py-2 rounded border font-medium hover:bg-gray-50"
                 style={{ borderColor: colors.border }}
               >
                 Close

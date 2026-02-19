@@ -261,7 +261,7 @@ export default function PTOSubmissionPage() {
   }
 
   return (
-    <div className="min-h-screen p-6" style={{ backgroundColor: colors.lightGray }}>
+    <div className="min-h-screen p-3 md:p-6" style={{ backgroundColor: colors.lightGray }}>
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-6">
@@ -272,7 +272,7 @@ export default function PTOSubmissionPage() {
           >
             ← Back to Dashboard
           </Link>
-          <h1 className="text-2xl font-bold" style={{ color: colors.primaryBlue }}>
+          <h1 className="text-xl md:text-2xl font-bold" style={{ color: colors.primaryBlue }}>
             Submit PTO Request
           </h1>
           <p className="text-gray-600 mt-1">
@@ -316,7 +316,7 @@ export default function PTOSubmissionPage() {
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm p-4 md:p-6 mb-6">
           {/* Provider Selection */}
           <div className="mb-6">
             <label className="block text-sm font-medium mb-2" style={{ color: colors.primaryBlue }}>
@@ -366,7 +366,7 @@ export default function PTOSubmissionPage() {
                   </span>
                 )}
               </div>
-              <div className="flex items-baseline gap-2">
+              <div className="flex items-baseline gap-1 md:gap-2 flex-wrap">
                 <span
                   className="text-2xl font-bold"
                   style={{
@@ -586,7 +586,7 @@ export default function PTOSubmissionPage() {
         )}
 
         {/* PTO Calendar */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mt-6">
+        <div className="bg-white rounded-xl shadow-sm p-3 md:p-6 mt-6">
           <h2 className="text-lg font-semibold mb-4" style={{ color: colors.primaryBlue }}>
             Team PTO Calendar
           </h2>

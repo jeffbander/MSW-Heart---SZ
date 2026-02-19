@@ -204,7 +204,7 @@ export default function PTORequestsPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="max-w-4xl mx-auto px-3 md:px-4 py-6 md:py-8">
         {/* Provider Selection */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <label className="block text-sm font-medium mb-2" style={{ color: colors.primaryBlue }}>
@@ -242,7 +242,7 @@ export default function PTORequestsPage() {
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
                       required
-                      className="w-full px-3 py-2 border rounded"
+                      className="w-full px-3 py-3 md:py-2 border rounded text-base md:text-sm"
                       style={{ borderColor: colors.border }}
                     />
                   </div>
@@ -254,7 +254,7 @@ export default function PTORequestsPage() {
                       onChange={(e) => setEndDate(e.target.value)}
                       required
                       min={startDate}
-                      className="w-full px-3 py-2 border rounded"
+                      className="w-full px-3 py-3 md:py-2 border rounded text-base md:text-sm"
                       style={{ borderColor: colors.border }}
                     />
                   </div>
@@ -266,7 +266,7 @@ export default function PTORequestsPage() {
                     <select
                       value={leaveType}
                       onChange={(e) => setLeaveType(e.target.value as LeaveType)}
-                      className="w-full px-3 py-2 border rounded"
+                      className="w-full px-3 py-3 md:py-2 border rounded text-base md:text-sm"
                       style={{ borderColor: colors.border }}
                     >
                       {leaveTypes.map((lt) => (
@@ -281,7 +281,7 @@ export default function PTORequestsPage() {
                     <select
                       value={timeBlock}
                       onChange={(e) => setTimeBlock(e.target.value as PTOTimeBlock)}
-                      className="w-full px-3 py-2 border rounded"
+                      className="w-full px-3 py-3 md:py-2 border rounded text-base md:text-sm"
                       style={{ borderColor: colors.border }}
                     >
                       {timeBlocks.map((tb) => (
@@ -299,7 +299,7 @@ export default function PTORequestsPage() {
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     rows={2}
-                    className="w-full px-3 py-2 border rounded"
+                    className="w-full px-3 py-3 md:py-2 border rounded text-base md:text-sm"
                     style={{ borderColor: colors.border }}
                     placeholder="Additional notes..."
                   />
@@ -358,7 +358,7 @@ export default function PTORequestsPage() {
                 <button
                   type="submit"
                   disabled={submitting || !startDate || !endDate}
-                  className="px-6 py-2 rounded text-white font-medium disabled:opacity-50"
+                  className="w-full md:w-auto px-6 py-3 md:py-2 rounded text-white font-medium text-base md:text-sm disabled:opacity-50"
                   style={{ backgroundColor: colors.primaryBlue }}
                 >
                   {submitting ? 'Submitting...' : 'Submit Request'}
@@ -375,14 +375,14 @@ export default function PTORequestsPage() {
               </div>
 
               {/* Tabs */}
-              <div className="flex border-b" style={{ borderColor: colors.border }}>
+              <div className="flex border-b overflow-x-auto" style={{ borderColor: colors.border }}>
                 {(['pending', 'approved', 'denied'] as TabType[]).map((tab) => {
                   const count = requests.filter((r) => r.status === tab).length;
                   return (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
-                      className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                      className={`flex-1 md:flex-initial whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                         activeTab === tab
                           ? 'border-current'
                           : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -406,9 +406,9 @@ export default function PTORequestsPage() {
                 ) : (
                   filteredRequests.map((req) => (
                     <div key={req.id} className="p-4">
-                      <div className="flex items-start justify-between">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between">
                         <div>
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span
                               className="px-2 py-0.5 rounded text-xs font-medium text-white"
                               style={{ backgroundColor: getStatusColor(req.status) }}
@@ -440,7 +440,7 @@ export default function PTORequestsPage() {
                         {req.status === 'pending' && (
                           <button
                             onClick={() => handleCancelRequest(req.id)}
-                            className="text-sm px-3 py-1 rounded border hover:bg-gray-50"
+                            className="text-sm px-4 md:px-3 py-2 md:py-1 rounded border hover:bg-gray-50"
                             style={{ borderColor: colors.border, color: colors.error }}
                           >
                             Cancel

@@ -256,7 +256,7 @@ export default function AdminPTORequestsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-3">
         <h2 className="text-2xl font-bold" style={{ color: colors.primaryBlue }}>
           PTO Requests
           {pendingCount > 0 && (
@@ -268,7 +268,7 @@ export default function AdminPTORequestsPage() {
             </span>
           )}
         </h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {/* View Toggle */}
           <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: colors.border }}>
             <button
@@ -460,7 +460,7 @@ export default function AdminPTORequestsPage() {
 
           {/* Tabs */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="flex border-b" style={{ borderColor: colors.border }}>
+        <div className="flex border-b overflow-x-auto" style={{ borderColor: colors.border }}>
           {(['pending', 'approved', 'denied', 'all'] as TabType[]).map((tab) => {
             const count =
               tab === 'all'
@@ -470,7 +470,7 @@ export default function AdminPTORequestsPage() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab
                     ? 'border-current'
                     : 'border-transparent text-gray-500 hover:text-gray-700'

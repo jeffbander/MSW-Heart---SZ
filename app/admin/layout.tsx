@@ -36,7 +36,7 @@ export default function AdminLayout({
     <div className="min-h-screen" style={{ backgroundColor: colors.lightGray }}>
       {/* Admin Header */}
       <header className="py-4 px-4 shadow-sm" style={{ backgroundColor: colors.primaryBlue }}>
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-white">Admin Panel</h1>
             <p className="text-blue-100 text-sm">MSW Heart Cardiology Scheduler</p>
@@ -65,12 +65,12 @@ export default function AdminLayout({
       {/* Navigation */}
       <nav className="bg-white border-b" style={{ borderColor: colors.border }}>
         <div className="max-w-7xl mx-auto px-4">
-          <div className="flex gap-1">
+          <div className="flex gap-1 overflow-x-auto">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   pathname === item.href
                     ? 'border-current'
                     : 'border-transparent hover:bg-gray-50'
