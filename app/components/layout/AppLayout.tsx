@@ -68,7 +68,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
   return (
     <div className="min-h-screen flex" style={{ backgroundColor: colors.lightGray }}>
       {/* Sidebar */}
-      <Sidebar isCollapsed={isCollapsed} onToggleCollapse={handleToggleCollapse} />
+      <div className={isMobile && !isCollapsed ? 'fixed inset-y-0 left-0 z-40' : ''}>
+        <Sidebar isCollapsed={isCollapsed} onToggleCollapse={handleToggleCollapse} onNavigate={isMobile ? () => setIsCollapsed(true) : undefined} />
+      </div>
 
       {/* Expand button when collapsed */}
       {isCollapsed && (

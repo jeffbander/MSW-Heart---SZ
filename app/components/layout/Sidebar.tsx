@@ -52,9 +52,10 @@ const TAB_ORDER_KEY = 'cardiology_sidebar_tab_order';
 interface SidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  onNavigate?: () => void;
 }
 
-export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
+export default function Sidebar({ isCollapsed, onToggleCollapse, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout, isSuperAdmin, requestLogin } = useAuth();
   const [tabs, setTabs] = useState<NavItem[]>(mainTabs);
@@ -143,6 +144,7 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps)
             <Link
               key={item.id}
               href={item.href}
+              onClick={onNavigate}
               className={`flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive(item.href)
                   ? 'bg-white/20 text-white'
@@ -168,6 +170,7 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps)
             <Link
               key={item.id}
               href={item.href}
+              onClick={onNavigate}
               className={`flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive(item.href)
                   ? 'bg-white/20 text-white'
@@ -213,6 +216,7 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps)
                     <Link
                       key={item.id}
                       href={item.href}
+                      onClick={onNavigate}
                       className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                         isActive(item.href)
                           ? 'bg-white/20 text-white'
