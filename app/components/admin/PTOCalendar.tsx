@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Provider, PTORequest } from '@/lib/types';
+import { isHoliday } from '@/lib/holidays';
 
 // Helper to format date in local timezone (avoids UTC conversion issues)
 function formatLocalDate(date: Date): string {
@@ -98,7 +99,12 @@ export default function PTOCalendar({
       return []; // No PTO on weekends
     }
 
+    // Skip holidays - PTO doesn't apply to holidays
     const dateStr = formatLocalDate(date);
+    if (isHoliday(dateStr)) {
+      return [];
+    }
+
     return filteredRequests.filter((r) => {
       const start = new Date(r.start_date + 'T00:00:00');
       const end = new Date(r.end_date + 'T00:00:00');
@@ -252,12 +258,15 @@ export default function PTOCalendar({
             const dayRequests = getRequestsForDate(date);
             const isInMonth = isCurrentMonth(date);
             const isTodayDate = isToday(date);
+            const dateStr = formatLocalDate(date);
+            const holiday = isHoliday(dateStr);
+            const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
             return (
               <div
                 key={idx}
                 className={`min-h-[100px] p-1 border-b border-r cursor-pointer ${
-                  isInMonth ? 'bg-white' : 'bg-gray-50'
+                  !isInMonth ? 'bg-gray-50' : holiday ? 'bg-red-50' : isWeekend ? 'bg-gray-50' : 'bg-white'
                 }`}
                 style={{ borderColor: colors.border }}
                 onClick={() => dayRequests.length > 0 && setSelectedDate(date)}
@@ -275,6 +284,13 @@ export default function PTOCalendar({
                     {date.getDate()}
                   </span>
                 </div>
+
+                {/* Holiday label */}
+                {holiday && isInMonth && (
+                  <div className="text-xs font-medium text-red-600 px-1 truncate" title={holiday.name}>
+                    {holiday.name}
+                  </div>
+                )}
 
                 {/* PTO Requests for this day */}
                 <div className="space-y-1">
