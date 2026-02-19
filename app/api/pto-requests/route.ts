@@ -15,7 +15,7 @@ export async function GET(request: Request) {
       .from('pto_requests')
       .select(`
         *,
-        provider:providers(id, name, initials, role)
+        provider:providers(id, name, initials, role, email)
       `)
       .order('created_at', { ascending: false });
 
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
       })
       .select(`
         *,
-        provider:providers(id, name, initials, role)
+        provider:providers(id, name, initials, role, email)
       `)
       .single();
 

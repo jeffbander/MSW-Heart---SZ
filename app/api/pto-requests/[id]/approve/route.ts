@@ -58,7 +58,7 @@ export async function POST(
       .eq('id', id)
       .select(`
         *,
-        provider:providers(id, name, initials, role)
+        provider:providers(id, name, initials, role, email)
       `)
       .single();
 

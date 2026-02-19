@@ -1,5 +1,12 @@
 // Email utility functions for PTO notifications
-// Note: This uses a basic implementation. Configure SMTP settings in environment variables.
+// Uses SendGrid for email delivery
+
+import sgMail from '@sendgrid/mail';
+
+// Initialize SendGrid with API key
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
 
 interface EmailOptions {
   to: string;
@@ -19,29 +26,31 @@ interface PTOEmailData {
   adminComment?: string;
 }
 
-// For now, this logs the email. In production, integrate with an email service.
 async function sendEmail(options: EmailOptions): Promise<boolean> {
-  // TODO: Implement actual email sending with SMTP or a service like SendGrid
-  // For now, we'll log the email details
-  console.log('=== EMAIL NOTIFICATION ===');
-  console.log('To:', options.to);
-  console.log('Subject:', options.subject);
-  console.log('Body:', options.html);
-  console.log('==========================');
+  const fromEmail = process.env.EMAIL_FROM || process.env.ADMIN_EMAIL || 'noreply@mountsinai.org';
 
-  // In production, use something like:
-  // const nodemailer = require('nodemailer');
-  // const transporter = nodemailer.createTransport({
-  //   host: process.env.SMTP_HOST,
-  //   port: parseInt(process.env.SMTP_PORT || '587'),
-  //   auth: {
-  //     user: process.env.SMTP_USER,
-  //     pass: process.env.SMTP_PASSWORD,
-  //   },
-  // });
-  // await transporter.sendMail(options);
+  if (!process.env.SENDGRID_API_KEY) {
+    console.log('SENDGRID_API_KEY not set — logging email instead of sending');
+    console.log('=== EMAIL NOTIFICATION ===');
+    console.log('To:', options.to);
+    console.log('Subject:', options.subject);
+    console.log('==========================');
+    return true;
+  }
 
-  return true;
+  try {
+    await sgMail.send({
+      to: options.to,
+      from: fromEmail,
+      subject: options.subject,
+      html: options.html,
+    });
+    console.log(`Email sent successfully to ${options.to}`);
+    return true;
+  } catch (error: any) {
+    console.error('SendGrid email error:', error?.response?.body || error);
+    return false;
+  }
 }
 
 export async function sendPTOSubmissionEmail(data: PTOEmailData): Promise<boolean> {
