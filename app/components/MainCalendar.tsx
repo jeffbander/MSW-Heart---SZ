@@ -371,13 +371,21 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     localStorage.setItem('providerViewSavedViews', JSON.stringify(updated));
   };
 
-  // Check if a provider is on leave for a specific date
+  // Check if a date is a work day for a given provider
+  const isProviderWorkDay = (providerId: string, date: string): boolean => {
+    const provider = providers.find(p => p.id === providerId);
+    const workDays = provider?.work_days || [1, 2, 3, 4, 5];
+    const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+    return workDays.includes(dayOfWeek);
+  };
+
+  // Check if a provider is on leave for a specific date (only on their work days)
   const isProviderOnLeave = (providerId: string, date: string): boolean => {
     return providerLeaves.some(leave =>
       leave.provider_id === providerId &&
       date >= leave.start_date &&
       date <= leave.end_date
-    );
+    ) && isProviderWorkDay(providerId, date);
   };
 
   const fetchData = async () => {
@@ -2044,7 +2052,8 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
         const modalApprovedPTOLeaves = (isPTOService && !isWeekendModal) ? providerLeaves.filter((leave: ProviderLeave) =>
           selectedCell.date >= leave.start_date &&
           selectedCell.date <= leave.end_date &&
-          leave.leave_type !== 'maternity'
+          leave.leave_type !== 'maternity' &&
+          isProviderWorkDay(leave.provider_id, selectedCell.date)
         ) : [];
         const modalAssignedProviderIds = new Set(cellAssignments.map(a => a.provider_id));
         const modalAdditionalPTOLeaves = modalApprovedPTOLeaves.filter((leave: ProviderLeave) => !modalAssignedProviderIds.has(leave.provider_id));
@@ -3237,7 +3246,10 @@ function ServiceView({
       const providerPTO = getProviderPTOForDate(a.provider_id, date);
       if (providerPTO.length === 0) {
         // Also check providerLeaves for approved leaves not yet in assignments
-        return providerLeaves.some(leave =>
+        const prov = providers.find(p => p.id === a.provider_id);
+        const provWorkDays = prov?.work_days || [1, 2, 3, 4, 5];
+        const dow = new Date(date + 'T00:00:00').getDay();
+        return provWorkDays.includes(dow) && providerLeaves.some(leave =>
           leave.provider_id === a.provider_id &&
           date >= leave.start_date &&
           date <= leave.end_date
@@ -3256,12 +3268,16 @@ function ServiceView({
       bgStyle = '#FFEDD5'; // Light orange - needs coverage
     }
 
-    // For PTO row: also get approved PTO leaves from providerLeaves (excluding maternity and weekends)
-    const approvedPTOLeaves = (isPTO && !isWeekend) ? providerLeaves.filter((leave: ProviderLeave) =>
-      date >= leave.start_date &&
-      date <= leave.end_date &&
-      leave.leave_type !== 'maternity'
-    ) : [];
+    // For PTO row: also get approved PTO leaves from providerLeaves (excluding maternity, weekends, and non-work days)
+    const dayOfWeekNum = new Date(date + 'T00:00:00').getDay();
+    const approvedPTOLeaves = (isPTO && !isWeekend) ? providerLeaves.filter((leave: ProviderLeave) => {
+      const leaveProvider = providers.find(p => p.id === leave.provider_id);
+      const leaveWorkDays = leaveProvider?.work_days || [1, 2, 3, 4, 5];
+      return date >= leave.start_date &&
+        date <= leave.end_date &&
+        leave.leave_type !== 'maternity' &&
+        leaveWorkDays.includes(dayOfWeekNum);
+    }) : [];
     // Get provider IDs already in cellAssignments to avoid duplicates
     const assignedProviderIds = new Set(cellAssignments.map(a => a.provider_id));
     // Filter to leaves not already shown via assignments
@@ -3971,7 +3987,9 @@ function ProviderView({
       const svc = services.find(s => s.id === a.service_id);
       return a.is_pto || svc?.name === 'PTO';
     });
-    const hasApprovedLeave = !isWeekend && !hasPTOAssignment && providerLeaves.some(leave =>
+    const providerWorkDays = provider.work_days || [1, 2, 3, 4, 5];
+    const isWorkDay = providerWorkDays.includes(dayOfWeek);
+    const hasApprovedLeave = !isWeekend && isWorkDay && !hasPTOAssignment && providerLeaves.some(leave =>
       leave.provider_id === provider.id &&
       date >= leave.start_date &&
       date <= leave.end_date &&
