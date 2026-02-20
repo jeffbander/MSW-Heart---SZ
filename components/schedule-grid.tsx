@@ -218,13 +218,18 @@ function transformRooms(
   return sections
 }
 
+interface PTOEntry {
+  name: string
+  timeBlock: 'AM' | 'PM' | 'BOTH'
+}
+
 function transformPTO(
   ptoDays: EchoPTO[],
   echoTechs: EchoTech[],
   dateRange: string[]
-): Record<string, string[]> {
+): Record<string, PTOEntry[]> {
   const techMap = new Map(echoTechs.map(t => [t.id, t]))
-  const ptoData: Record<string, string[]> = {}
+  const ptoData: Record<string, PTOEntry[]> = {}
 
   dateRange.forEach(dateStr => {
     const date = new Date(dateStr + 'T00:00:00')
@@ -233,9 +238,12 @@ function transformPTO(
     const displayDate = `${month}/${day}`
 
     const dayPTO = ptoDays.filter(p => p.date === dateStr)
-    const techNames = [...new Set(dayPTO.map(p => techMap.get(p.echo_tech_id)?.name || 'Unknown'))]
+    const entries: PTOEntry[] = dayPTO.map(p => ({
+      name: techMap.get(p.echo_tech_id)?.name || 'Unknown',
+      timeBlock: (p.time_block as 'AM' | 'PM' | 'BOTH') || 'BOTH',
+    }))
 
-    ptoData[displayDate] = techNames
+    ptoData[displayDate] = entries
   })
 
   return ptoData
@@ -587,7 +595,7 @@ function SortableRoomRow({
   weekendDates: WeekDate[]
   showWeekend: boolean
   isOdd: boolean
-  ptoData: Record<string, string[]>
+  ptoData: Record<string, PTOEntry[]>
   isAdmin?: boolean
   onCellClick?: (roomId: string, date: string, timeBlock: 'AM' | 'PM') => void
   onQuickDelete?: (assignmentId: string) => void
@@ -664,7 +672,9 @@ function SortableRoomRow({
         const pmStaff = slot?.pm || []
         const amEntries = slot?.amEntries || []
         const pmEntries = slot?.pmEntries || []
-        const ptoStaff = ptoData[day.date] || []
+        const ptoEntries = ptoData[day.date] || []
+        const amPtoStaff = ptoEntries.filter(e => e.timeBlock === 'AM' || e.timeBlock === 'BOTH').map(e => e.name)
+        const pmPtoStaff = ptoEntries.filter(e => e.timeBlock === 'PM' || e.timeBlock === 'BOTH').map(e => e.name)
         const isBlockedHoliday = day.holiday?.block_assignments ?? false
 
         const amKey = cellKey(room.id, day.fullDate, 'AM')
@@ -706,7 +716,7 @@ function SortableRoomRow({
                 onFocus={() => onFocusCell(amKey)}
               />
               <div className="relative z-[2] pointer-events-auto">
-                <StaffCell staff={amStaff} entries={amEntries} ptoStaff={ptoStaff} isBlockedHoliday={isBlockedHoliday} isAdmin={isAdmin} onQuickDelete={onQuickDelete} isDragEnabled={isDragEnabled} />
+                <StaffCell staff={amStaff} entries={amEntries} ptoStaff={amPtoStaff} isBlockedHoliday={isBlockedHoliday} isAdmin={isAdmin} onQuickDelete={onQuickDelete} isDragEnabled={isDragEnabled} />
                 {inlineAssignCell === amKey && (
                   <InlineTechDropdown
                     echoTechs={echoTechs}
@@ -744,7 +754,7 @@ function SortableRoomRow({
                 onFocus={() => onFocusCell(pmKey)}
               />
               <div className="relative z-[2] pointer-events-auto">
-                <StaffCell staff={pmStaff} entries={pmEntries} ptoStaff={ptoStaff} isBlockedHoliday={isBlockedHoliday} isAdmin={isAdmin} onQuickDelete={onQuickDelete} isDragEnabled={isDragEnabled} />
+                <StaffCell staff={pmStaff} entries={pmEntries} ptoStaff={pmPtoStaff} isBlockedHoliday={isBlockedHoliday} isAdmin={isAdmin} onQuickDelete={onQuickDelete} isDragEnabled={isDragEnabled} />
                 {inlineAssignCell === pmKey && (
                   <InlineTechDropdown
                     echoTechs={echoTechs}
@@ -810,7 +820,7 @@ function LabSectionComponent({
   weekdayDates: WeekDate[]
   weekendDates: WeekDate[]
   showWeekend: boolean
-  ptoData: Record<string, string[]>
+  ptoData: Record<string, PTOEntry[]>
   isAdmin?: boolean
   onCellClick?: (roomId: string, date: string, timeBlock: 'AM' | 'PM') => void
   onQuickDelete?: (assignmentId: string) => void
@@ -932,7 +942,7 @@ function PTORow({
   weekdayDates: WeekDate[]
   weekendDates: WeekDate[]
   showWeekend: boolean
-  ptoData: Record<string, string[]>
+  ptoData: Record<string, PTOEntry[]>
   isAdmin?: boolean
   onPTOClick?: (date: string, timeBlock: 'AM' | 'PM') => void
 }) {
@@ -942,43 +952,70 @@ function PTORow({
         <span className="font-semibold text-sm text-amber-700">PTO</span>
       </td>
       {weekdayDates.map((day, dayIdx) => {
-        const staff = ptoData[day.date] || []
+        const entries = ptoData[day.date] || []
         const isBlockedHoliday = day.holiday?.block_assignments ?? false
+        const amStaff = entries.filter(e => e.timeBlock === 'AM' || e.timeBlock === 'BOTH')
+        const pmStaff = entries.filter(e => e.timeBlock === 'PM' || e.timeBlock === 'BOTH')
         return (
-          <td
-            key={day.date}
-            colSpan={2}
-            className={cn(
-              "py-3 px-2 text-center",
-              isBlockedHoliday ? "bg-[#EDE9FE]" : "",
-              dayIdx < weekdayDates.length - 1 || showWeekend ? "border-r border-slate-200" : "",
-              isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-amber-100/50"
-            )}
-            onClick={() => isAdmin && !isBlockedHoliday && onPTOClick?.(day.fullDate, 'AM')}
-          >
-            {isBlockedHoliday ? (
-              <span className="text-slate-400">-</span>
-            ) : staff.length > 0 ? (
-              <div className="flex flex-wrap gap-x-1 justify-center text-[13px]">
-                {staff.map((name, idx) => (
-                  <span key={name} className="text-amber-700">
-                    {name}
-                    {!name.includes("(off)") && <span className="text-amber-600/70"> (off)</span>}
-                    {idx < staff.length - 1 && <span className="text-slate-400">,</span>}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </td>
+          <Fragment key={day.date}>
+            <td
+              className={cn(
+                "py-3 px-2 text-center border-r border-slate-100",
+                isBlockedHoliday ? "bg-[#EDE9FE]" : "",
+                isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-amber-100/50"
+              )}
+              onClick={() => isAdmin && !isBlockedHoliday && onPTOClick?.(day.fullDate, 'AM')}
+            >
+              {isBlockedHoliday ? (
+                <span className="text-slate-400">-</span>
+              ) : amStaff.length > 0 ? (
+                <div className="flex flex-wrap gap-x-1 justify-center text-[13px]">
+                  {amStaff.map((entry, idx) => (
+                    <span key={entry.name} className="text-amber-700">
+                      {entry.name}
+                      {idx < amStaff.length - 1 && <span className="text-slate-400">,</span>}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </td>
+            <td
+              className={cn(
+                "py-3 px-2 text-center",
+                isBlockedHoliday ? "bg-[#EDE9FE]" : "",
+                dayIdx < weekdayDates.length - 1 || showWeekend ? "border-r border-slate-200" : "",
+                isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-amber-100/50"
+              )}
+              onClick={() => isAdmin && !isBlockedHoliday && onPTOClick?.(day.fullDate, 'PM')}
+            >
+              {isBlockedHoliday ? (
+                <span className="text-slate-400">-</span>
+              ) : pmStaff.length > 0 ? (
+                <div className="flex flex-wrap gap-x-1 justify-center text-[13px]">
+                  {pmStaff.map((entry, idx) => (
+                    <span key={entry.name} className="text-amber-700">
+                      {entry.name}
+                      {idx < pmStaff.length - 1 && <span className="text-slate-400">,</span>}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </td>
+          </Fragment>
         )
       })}
       {showWeekend && weekendDates.map((day, idx) => (
-        <td key={day.date} colSpan={2} className={cn(
-          "py-3 px-2 text-center bg-slate-100/60",
-          idx < weekendDates.length - 1 ? "border-r border-slate-200" : ""
-        )}>
-          <span className="text-slate-400">-</span>
-        </td>
+        <Fragment key={day.date}>
+          <td className="py-3 px-2 text-center bg-slate-100/60 border-r border-slate-200/60">
+            <span className="text-slate-400">-</span>
+          </td>
+          <td className={cn(
+            "py-3 px-2 text-center bg-slate-100/60",
+            idx < weekendDates.length - 1 ? "border-r border-slate-200" : ""
+          )}>
+            <span className="text-slate-400">-</span>
+          </td>
+        </Fragment>
       ))}
     </tr>
   )

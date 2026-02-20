@@ -318,14 +318,14 @@ export default function EchoPage() {
   };
 
   // Add PTO (optimistic)
-  const handleAddPTO = async (techId: string, reason: string | null) => {
+  const handleAddPTO = async (techId: string, reason: string | null, timeBlock: 'AM' | 'PM' | 'BOTH') => {
     const tech = echoTechs.find(t => t.id === techId);
     const optimisticId = `optimistic-pto-${Date.now()}`;
     const optimistic: EchoPTO = {
       id: optimisticId,
       date: selectedDate,
       echo_tech_id: techId,
-      time_block: selectedTimeBlock,
+      time_block: timeBlock,
       reason,
       created_at: new Date().toISOString(),
       echo_tech: tech,
@@ -333,7 +333,8 @@ export default function EchoPage() {
 
     setPtoDays(prev => [...prev, optimistic]);
     setShowPTOModal(false);
-    toast.success(`PTO added for ${tech?.name || 'tech'}`);
+    const label = timeBlock === 'BOTH' ? 'Full Day' : timeBlock;
+    toast.success(`PTO added for ${tech?.name || 'tech'} (${label})`);
 
     try {
       const response = await fetch('/api/echo-pto', {
@@ -342,7 +343,7 @@ export default function EchoPage() {
         body: JSON.stringify({
           date: selectedDate,
           echo_tech_id: techId,
-          time_block: selectedTimeBlock,
+          time_block: timeBlock,
           reason
         })
       });
@@ -1158,15 +1159,13 @@ export default function EchoPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold mb-4" style={{ color: colors.primaryBlue }}>
-              Add PTO - {selectedDate} {selectedTimeBlock}
+              Add PTO - {selectedDate}
             </h3>
 
             <PTOForm
               echoTechs={echoTechs}
-              existingPTO={ptoDays.filter(
-                p => p.date === selectedDate &&
-                     (p.time_block === selectedTimeBlock || p.time_block === 'BOTH')
-              )}
+              existingPTO={ptoDays.filter(p => p.date === selectedDate)}
+              defaultTimeBlock={selectedTimeBlock}
               onSubmit={handleAddPTO}
               onCancel={() => setShowPTOModal(false)}
             />
@@ -1247,22 +1246,56 @@ export default function EchoPage() {
 function PTOForm({
   echoTechs,
   existingPTO,
+  defaultTimeBlock,
   onSubmit,
   onCancel
 }: {
   echoTechs: EchoTech[];
   existingPTO: EchoPTO[];
-  onSubmit: (techId: string, reason: string | null) => void;
+  defaultTimeBlock: 'AM' | 'PM';
+  onSubmit: (techId: string, reason: string | null, timeBlock: 'AM' | 'PM' | 'BOTH') => void;
   onCancel: () => void;
 }) {
   const [techId, setTechId] = useState('');
   const [reason, setReason] = useState('');
+  const [timeBlock, setTimeBlock] = useState<'AM' | 'PM' | 'BOTH'>(defaultTimeBlock);
 
-  const existingTechIds = new Set(existingPTO.map(p => p.echo_tech_id));
-  const availableTechs = echoTechs.filter(t => t.is_active && !existingTechIds.has(t.id));
+  // Filter out techs that already have PTO for the selected time block
+  const availableTechs = echoTechs.filter(t => {
+    if (!t.is_active) return false;
+    const techPTO = existingPTO.filter(p => p.echo_tech_id === t.id);
+    for (const p of techPTO) {
+      // If existing PTO is BOTH, tech is fully covered
+      if (p.time_block === 'BOTH') return false;
+      // If we're adding BOTH but tech has any existing PTO, skip
+      if (timeBlock === 'BOTH' && (p.time_block === 'AM' || p.time_block === 'PM')) return false;
+      // If existing matches selected time block, skip
+      if (p.time_block === timeBlock) return false;
+    }
+    return true;
+  });
 
   return (
     <div>
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-2">Time Block</label>
+        <div className="flex rounded-lg border border-slate-300 overflow-hidden">
+          {(['AM', 'PM', 'BOTH'] as const).map((tb) => (
+            <button
+              key={tb}
+              onClick={() => setTimeBlock(tb)}
+              className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                timeBlock === tb
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-white text-slate-600 hover:bg-slate-50'
+              } ${tb !== 'AM' ? 'border-l border-slate-300' : ''}`}
+            >
+              {tb === 'BOTH' ? 'Full Day' : tb}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="mb-4">
         <label className="block text-sm font-medium mb-2">Tech</label>
         <select
@@ -1296,7 +1329,7 @@ function PTOForm({
           Cancel
         </button>
         <button
-          onClick={() => onSubmit(techId, reason || null)}
+          onClick={() => onSubmit(techId, reason || null, timeBlock)}
           disabled={!techId}
           className="px-4 py-2 rounded text-white font-medium disabled:opacity-50"
           style={{ backgroundColor: colors.teal }}
