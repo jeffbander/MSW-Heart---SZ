@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { Service, Provider, ScheduleAssignment, AvailabilityViolation, ProviderAvailabilityRule, ProviderLeave, DayMetadata, PTORequest } from '@/lib/types';
 import { Holiday, getHolidaysInRange, isInpatientService } from '@/lib/holidays';
@@ -101,6 +101,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [assignments, setAssignments] = useState<ScheduleAssignment[]>([]);
   const [loading, setLoading] = useState(true);
+  const initialLoadDone = useRef(false);
 
   // View controls
   const [viewMode, setViewMode] = useState<ViewMode>('service');
@@ -389,7 +390,9 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
   };
 
   const fetchData = async () => {
-    setLoading(true);
+    if (!initialLoadDone.current) {
+      setLoading(true);
+    }
     try {
       const [servicesRes, providersRes, assignmentsRes, metadataRes] = await Promise.all([
         fetch('/api/services'),
@@ -411,6 +414,7 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
       setProviders(providersData);
       setAssignments(assignmentsData);
       setDayMetadata(Array.isArray(metadataData) ? metadataData : []);
+      initialLoadDone.current = true;
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {

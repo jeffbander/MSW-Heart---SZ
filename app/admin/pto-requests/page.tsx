@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Provider, PTORequest, LeaveType, PTOTimeBlock } from '@/lib/types';
 import PTOCalendar from '@/app/components/admin/PTOCalendar';
 import { useAdmin } from '@/app/contexts/AuthContext';
@@ -39,6 +39,7 @@ export default function AdminPTORequestsPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [requests, setRequests] = useState<PTORequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const initialLoadDone = useRef(false);
   const [activeTab, setActiveTab] = useState<TabType>('pending');
   const [filterProviderId, setFilterProviderId] = useState<string>('');
   const [viewMode, setViewMode] = useState<ViewMode>('calendar');
@@ -68,7 +69,9 @@ export default function AdminPTORequestsPage() {
   }, []);
 
   async function fetchData() {
-    setLoading(true);
+    if (!initialLoadDone.current) {
+      setLoading(true);
+    }
     try {
       const [providersRes, requestsRes] = await Promise.all([
         fetch('/api/providers'),
@@ -78,6 +81,7 @@ export default function AdminPTORequestsPage() {
       const requestsData = await requestsRes.json();
       setProviders(providersData || []);
       setRequests(requestsData || []);
+      initialLoadDone.current = true;
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
