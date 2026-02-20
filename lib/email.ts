@@ -1,12 +1,7 @@
 // Email utility functions for PTO notifications
-// Uses SendGrid for email delivery
+// Uses Nodemailer with Outlook SMTP
 
-import sgMail from '@sendgrid/mail';
-
-// Initialize SendGrid with API key
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-}
+import nodemailer from 'nodemailer';
 
 interface EmailOptions {
   to: string;
@@ -27,10 +22,10 @@ interface PTOEmailData {
 }
 
 async function sendEmail(options: EmailOptions): Promise<boolean> {
-  const fromEmail = process.env.EMAIL_FROM || process.env.ADMIN_EMAIL || 'noreply@mountsinai.org';
+  const fromEmail = process.env.SMTP_USER || process.env.ADMIN_EMAIL || 'noreply@mountsinai.org';
 
-  if (!process.env.SENDGRID_API_KEY) {
-    console.log('SENDGRID_API_KEY not set — logging email instead of sending');
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
+    console.log('SMTP credentials not set — logging email instead of sending');
     console.log('=== EMAIL NOTIFICATION ===');
     console.log('To:', options.to);
     console.log('Subject:', options.subject);
@@ -39,16 +34,26 @@ async function sendEmail(options: EmailOptions): Promise<boolean> {
   }
 
   try {
-    await sgMail.send({
-      to: options.to,
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASSWORD,
+      },
+    });
+
+    await transporter.sendMail({
       from: fromEmail,
+      to: options.to,
       subject: options.subject,
       html: options.html,
     });
     console.log(`Email sent successfully to ${options.to}`);
     return true;
   } catch (error: any) {
-    console.error('SendGrid email error:', error?.response?.body || error);
+    console.error('SMTP email error:', error.message || error);
     return false;
   }
 }
