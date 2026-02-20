@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTemplate, Holiday, Provider, Service, ScheduleAssignment } from '@/lib/types';
 import { ScheduleGrid } from '@/components/schedule-grid';
 import EchoAssignmentModal from '@/app/components/EchoAssignmentModal';
 import ProvidersScheduleGrid from '@/app/components/ProvidersScheduleGrid';
 import { useAdmin } from '@/app/contexts/AuthContext';
+import { useToast } from '@/app/contexts/ToastContext';
+import { useUndoRedo } from './useUndoRedo';
 import PasscodeModal from '@/app/components/layout/PasscodeModal';
 
 const colors = {
@@ -36,6 +38,9 @@ export default function EchoPage() {
 
   // Admin state
   const { isAdminMode, authenticate, logout } = useAdmin();
+  const toast = useToast();
+  const undoRedo = useUndoRedo();
+  const undoingRef = useRef(false);
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
 
   // Tab state
@@ -158,6 +163,11 @@ export default function EchoPage() {
     }
   }, [activeTab, weekStartDate, weekEndDate]);
 
+  // Clear undo/redo stack when week changes
+  useEffect(() => {
+    undoRedo.clear();
+  }, [weekStartDate]);
+
   // Fetch templates
   const fetchTemplates = async () => {
     try {
@@ -209,69 +219,145 @@ export default function EchoPage() {
     );
   };
 
-  // Save assignment
+  // Save assignment (optimistic)
   const handleSaveAssignment = async (techId: string, notes: string | null) => {
     if (!selectedRoom) return;
 
     // Handle "Temp" special case
     if (techId === 'TEMP') {
-      // For now, we'll skip Temp assignments as they need special handling
-      alert('Temp assignments will be supported in a future update');
+      toast.info('Temp assignments will be supported in a future update');
       return;
     }
 
-    const response = await fetch('/api/echo-schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        date: selectedDate,
-        echo_room_id: selectedRoom.id,
-        echo_tech_id: techId,
-        time_block: selectedTimeBlock,
-        notes
-      })
-    });
+    const tech = echoTechs.find(t => t.id === techId);
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimistic: EchoScheduleAssignment = {
+      id: optimisticId,
+      date: selectedDate,
+      echo_room_id: selectedRoom.id,
+      echo_tech_id: techId,
+      time_block: selectedTimeBlock,
+      notes,
+      created_at: new Date().toISOString(),
+      echo_tech: tech,
+      echo_room: selectedRoom,
+    };
 
-    if (response.ok) {
-      await fetchData();
-    } else {
-      const error = await response.json();
-      alert(error.error || 'Failed to save assignment');
+    // Optimistically add and close modal
+    setAssignments(prev => [...prev, optimistic]);
+    setShowAssignmentModal(false);
+    toast.success(`Assigned ${tech?.name || 'tech'}`);
+
+    try {
+      const response = await fetch('/api/echo-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: selectedDate,
+          echo_room_id: selectedRoom.id,
+          echo_tech_id: techId,
+          time_block: selectedTimeBlock,
+          notes
+        })
+      });
+
+      if (response.ok) {
+        const real = await response.json();
+        setAssignments(prev => prev.map(a => a.id === optimisticId ? { ...real, echo_tech: tech, echo_room: selectedRoom } : a));
+        undoRedo.push({
+          type: 'create_assignment',
+          assignmentId: real.id,
+          techId,
+          techName: tech?.name || 'tech',
+          roomId: selectedRoom.id,
+          date: selectedDate,
+          timeBlock: selectedTimeBlock,
+          notes: notes || null,
+        });
+      } else {
+        const error = await response.json();
+        setAssignments(prev => prev.filter(a => a.id !== optimisticId));
+        toast.error(error.error || 'Failed to save assignment');
+      }
+    } catch {
+      setAssignments(prev => prev.filter(a => a.id !== optimisticId));
+      toast.error('Failed to save assignment');
     }
   };
 
-  // Delete assignment
+  // Delete assignment (optimistic)
   const handleDeleteAssignment = async (assignmentId: string) => {
-    const response = await fetch(`/api/echo-schedule?id=${assignmentId}`, {
-      method: 'DELETE'
-    });
+    const removed = assignments.find(a => a.id === assignmentId);
+    setAssignments(prev => prev.filter(a => a.id !== assignmentId));
+    toast.success('Assignment removed');
 
-    if (response.ok) {
-      await fetchData();
-    } else {
-      alert('Failed to delete assignment');
+    try {
+      const response = await fetch(`/api/echo-schedule?id=${assignmentId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        if (removed) setAssignments(prev => [...prev, removed]);
+        toast.error('Failed to delete assignment');
+      } else if (removed && !assignmentId.startsWith('optimistic-')) {
+        undoRedo.push({
+          type: 'delete_assignment',
+          assignmentId,
+          techId: removed.echo_tech_id,
+          techName: removed.echo_tech?.name || 'tech',
+          roomId: removed.echo_room_id,
+          date: removed.date,
+          timeBlock: removed.time_block as 'AM' | 'PM',
+          notes: removed.notes || null,
+        });
+      }
+    } catch {
+      if (removed) setAssignments(prev => [...prev, removed]);
+      toast.error('Failed to delete assignment');
     }
   };
 
-  // Add PTO
+  // Add PTO (optimistic)
   const handleAddPTO = async (techId: string, reason: string | null) => {
-    const response = await fetch('/api/echo-pto', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        date: selectedDate,
-        echo_tech_id: techId,
-        time_block: selectedTimeBlock,
-        reason
-      })
-    });
+    const tech = echoTechs.find(t => t.id === techId);
+    const optimisticId = `optimistic-pto-${Date.now()}`;
+    const optimistic: EchoPTO = {
+      id: optimisticId,
+      date: selectedDate,
+      echo_tech_id: techId,
+      time_block: selectedTimeBlock,
+      reason,
+      created_at: new Date().toISOString(),
+      echo_tech: tech,
+    };
 
-    if (response.ok) {
-      await fetchData();
-      setShowPTOModal(false);
-    } else {
-      const error = await response.json();
-      alert(error.error || 'Failed to add PTO');
+    setPtoDays(prev => [...prev, optimistic]);
+    setShowPTOModal(false);
+    toast.success(`PTO added for ${tech?.name || 'tech'}`);
+
+    try {
+      const response = await fetch('/api/echo-pto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: selectedDate,
+          echo_tech_id: techId,
+          time_block: selectedTimeBlock,
+          reason
+        })
+      });
+
+      if (response.ok) {
+        const real = await response.json();
+        setPtoDays(prev => prev.map(p => p.id === optimisticId ? { ...real, echo_tech: tech } : p));
+      } else {
+        setPtoDays(prev => prev.filter(p => p.id !== optimisticId));
+        const error = await response.json();
+        toast.error(error.error || 'Failed to add PTO');
+      }
+    } catch {
+      setPtoDays(prev => prev.filter(p => p.id !== optimisticId));
+      toast.error('Failed to add PTO');
     }
   };
 
@@ -290,10 +376,10 @@ export default function EchoPage() {
     if (response.ok) {
       await fetchTemplates();
       setShowSaveTemplateModal(false);
-      alert('Template saved successfully!');
+      toast.success('Template saved successfully!');
     } else {
       const error = await response.json();
-      alert(error.error || 'Failed to save template');
+      toast.error(error.error || 'Failed to save template');
     }
   };
 
@@ -314,10 +400,445 @@ export default function EchoPage() {
       const result = await response.json();
       await fetchData();
       setShowApplyTemplateModal(false);
-      alert(result.message);
+      toast.success(result.message);
     } else {
       const error = await response.json();
-      alert(error.error || 'Failed to apply template');
+      toast.error(error.error || 'Failed to apply template');
+    }
+  };
+
+  // Copy previous week's assignments
+  const [copyingWeek, setCopyingWeek] = useState(false);
+
+  const handleCopyPreviousWeek = async () => {
+    setCopyingWeek(true);
+    try {
+      // Calculate previous week date range
+      const prevStart = new Date(weekStartDate + 'T00:00:00');
+      prevStart.setDate(prevStart.getDate() - 7);
+      const prevEnd = new Date(weekEndDate + 'T00:00:00');
+      prevEnd.setDate(prevEnd.getDate() - 7);
+      const prevStartStr = formatLocalDate(prevStart);
+      const prevEndStr = formatLocalDate(prevEnd);
+
+      // Fetch previous week's assignments
+      const res = await fetch(`/api/echo-schedule?startDate=${prevStartStr}&endDate=${prevEndStr}`);
+      if (!res.ok) {
+        toast.error('Failed to fetch previous week');
+        return;
+      }
+      const prevAssignments: EchoScheduleAssignment[] = await res.json();
+
+      if (prevAssignments.length === 0) {
+        toast.info('No assignments found in previous week');
+        return;
+      }
+
+      // Build set of existing slots to skip
+      const existingSlots = new Set(
+        assignments.map(a => `${a.echo_room_id}-${a.date}-${a.time_block}-${a.echo_tech_id}`)
+      );
+
+      let copied = 0;
+      let skipped = 0;
+      const createdForUndo: { assignmentId: string; techId: string; roomId: string; date: string; timeBlock: 'AM' | 'PM' }[] = [];
+
+      for (const prev of prevAssignments) {
+        const prevDate = new Date(prev.date + 'T00:00:00');
+        prevDate.setDate(prevDate.getDate() + 7);
+        const newDate = formatLocalDate(prevDate);
+        const slotKey = `${prev.echo_room_id}-${newDate}-${prev.time_block}-${prev.echo_tech_id}`;
+
+        if (existingSlots.has(slotKey)) {
+          skipped++;
+          continue;
+        }
+
+        const response = await fetch('/api/echo-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: newDate,
+            echo_room_id: prev.echo_room_id,
+            echo_tech_id: prev.echo_tech_id,
+            time_block: prev.time_block,
+            notes: prev.notes
+          })
+        });
+
+        if (response.ok) {
+          const real = await response.json();
+          createdForUndo.push({
+            assignmentId: real.id,
+            techId: prev.echo_tech_id,
+            roomId: prev.echo_room_id,
+            date: newDate,
+            timeBlock: prev.time_block as 'AM' | 'PM',
+          });
+          copied++;
+        } else {
+          skipped++;
+        }
+      }
+
+      await fetchData();
+      toast.success(`Copied ${copied} assignments${skipped > 0 ? ` (${skipped} skipped)` : ''}`);
+      if (createdForUndo.length > 0) {
+        undoRedo.push({ type: 'bulk_create', assignments: createdForUndo, techName: 'previous week' });
+      }
+    } catch {
+      toast.error('Failed to copy previous week');
+    } finally {
+      setCopyingWeek(false);
+    }
+  };
+
+  // Quick assign from inline dropdown (Feature 7)
+  const handleQuickAssign = async (roomId: string, date: string, timeBlock: 'AM' | 'PM', techId: string) => {
+    const tech = echoTechs.find(t => t.id === techId);
+    const room = echoRooms.find(r => r.id === roomId);
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimistic: EchoScheduleAssignment = {
+      id: optimisticId,
+      date,
+      echo_room_id: roomId,
+      echo_tech_id: techId,
+      time_block: timeBlock,
+      notes: null,
+      created_at: new Date().toISOString(),
+      echo_tech: tech,
+      echo_room: room,
+    };
+
+    setAssignments(prev => [...prev, optimistic]);
+    toast.success(`Assigned ${tech?.name || 'tech'}`);
+
+    try {
+      const response = await fetch('/api/echo-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, echo_room_id: roomId, echo_tech_id: techId, time_block: timeBlock })
+      });
+
+      if (response.ok) {
+        const real = await response.json();
+        setAssignments(prev => prev.map(a => a.id === optimisticId ? { ...real, echo_tech: tech, echo_room: room } : a));
+        undoRedo.push({
+          type: 'create_assignment',
+          assignmentId: real.id,
+          techId,
+          techName: tech?.name || 'tech',
+          roomId,
+          date,
+          timeBlock,
+          notes: null,
+        });
+      } else {
+        setAssignments(prev => prev.filter(a => a.id !== optimisticId));
+        const error = await response.json();
+        toast.error(error.error || 'Failed to save assignment');
+      }
+    } catch {
+      setAssignments(prev => prev.filter(a => a.id !== optimisticId));
+      toast.error('Failed to save assignment');
+    }
+  };
+
+  // Bulk assign to multiple cells (Feature 8)
+  const handleBulkAssign = async (cells: { roomId: string; date: string; timeBlock: 'AM' | 'PM' }[], techId: string) => {
+    const tech = echoTechs.find(t => t.id === techId);
+    const optimisticAssignments: EchoScheduleAssignment[] = cells.map((cell, i) => ({
+      id: `optimistic-bulk-${Date.now()}-${i}`,
+      date: cell.date,
+      echo_room_id: cell.roomId,
+      echo_tech_id: techId,
+      time_block: cell.timeBlock,
+      notes: null,
+      created_at: new Date().toISOString(),
+      echo_tech: tech,
+      echo_room: echoRooms.find(r => r.id === cell.roomId),
+    }));
+
+    setAssignments(prev => [...prev, ...optimisticAssignments]);
+    toast.success(`Assigning ${tech?.name || 'tech'} to ${cells.length} cell${cells.length !== 1 ? 's' : ''}...`);
+
+    let failCount = 0;
+    const created: { assignmentId: string; techId: string; roomId: string; date: string; timeBlock: 'AM' | 'PM' }[] = [];
+
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      const optId = optimisticAssignments[i].id;
+
+      try {
+        const response = await fetch('/api/echo-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: cell.date,
+            echo_room_id: cell.roomId,
+            echo_tech_id: techId,
+            time_block: cell.timeBlock
+          })
+        });
+
+        if (response.ok) {
+          const real = await response.json();
+          setAssignments(prev => prev.map(a => a.id === optId ? { ...real, echo_tech: tech, echo_room: echoRooms.find(r => r.id === cell.roomId) } : a));
+          created.push({ assignmentId: real.id, techId, roomId: cell.roomId, date: cell.date, timeBlock: cell.timeBlock });
+        } else {
+          setAssignments(prev => prev.filter(a => a.id !== optId));
+          failCount++;
+        }
+      } catch {
+        setAssignments(prev => prev.filter(a => a.id !== optId));
+        failCount++;
+      }
+    }
+
+    if (failCount > 0) {
+      toast.error(`${failCount} assignment${failCount !== 1 ? 's' : ''} failed`);
+    }
+    if (created.length > 0) {
+      undoRedo.push({ type: 'bulk_create', assignments: created, techName: tech?.name || 'tech' });
+    }
+  };
+
+  // Move assignment to a different cell via drag (Feature 9)
+  const handleMoveAssignment = async (assignmentId: string, newRoomId: string, newDate: string, newTimeBlock: 'AM' | 'PM') => {
+    const existing = assignments.find(a => a.id === assignmentId);
+    if (!existing) return;
+
+    // Skip if dropped in same cell
+    if (existing.echo_room_id === newRoomId && existing.date === newDate && existing.time_block === newTimeBlock) return;
+
+    const newRoom = echoRooms.find(r => r.id === newRoomId);
+
+    // Optimistically update
+    setAssignments(prev => prev.map(a =>
+      a.id === assignmentId
+        ? { ...a, echo_room_id: newRoomId, date: newDate, time_block: newTimeBlock, echo_room: newRoom }
+        : a
+    ));
+    toast.success(`Moved ${existing.echo_tech?.name || 'tech'}`);
+
+    try {
+      const response = await fetch('/api/echo-schedule', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: assignmentId,
+          echo_room_id: newRoomId,
+          date: newDate,
+          time_block: newTimeBlock
+        })
+      });
+
+      if (response.ok) {
+        const real = await response.json();
+        setAssignments(prev => prev.map(a => a.id === assignmentId ? { ...real } : a));
+        undoRedo.push({
+          type: 'move_assignment',
+          assignmentId,
+          techName: existing.echo_tech?.name || 'tech',
+          fromRoomId: existing.echo_room_id,
+          fromDate: existing.date,
+          fromTimeBlock: existing.time_block as 'AM' | 'PM',
+          toRoomId: newRoomId,
+          toDate: newDate,
+          toTimeBlock: newTimeBlock,
+        });
+      } else {
+        // Revert
+        setAssignments(prev => prev.map(a =>
+          a.id === assignmentId ? existing : a
+        ));
+        toast.error('Failed to move assignment');
+      }
+    } catch {
+      setAssignments(prev => prev.map(a =>
+        a.id === assignmentId ? existing : a
+      ));
+      toast.error('Failed to move assignment');
+    }
+  };
+
+  // Undo last action
+  const handleUndo = async () => {
+    if (undoingRef.current) return;
+    undoingRef.current = true;
+    try {
+      const action = undoRedo.popUndo();
+      if (!action) return;
+
+      switch (action.type) {
+        case 'create_assignment': {
+          setAssignments(prev => prev.filter(a => a.id !== action.assignmentId));
+          toast.info(`Undid: assigned ${action.techName}`);
+          try {
+            const res = await fetch(`/api/echo-schedule?id=${action.assignmentId}`, { method: 'DELETE' });
+            if (!res.ok) { fetchData(); }
+          } catch { fetchData(); }
+          undoRedo.pushRedo(action);
+          break;
+        }
+        case 'delete_assignment': {
+          const tech = echoTechs.find(t => t.id === action.techId);
+          const room = echoRooms.find(r => r.id === action.roomId);
+          const optimisticId = `optimistic-undo-${Date.now()}`;
+          setAssignments(prev => [...prev, {
+            id: optimisticId, date: action.date, echo_room_id: action.roomId,
+            echo_tech_id: action.techId, time_block: action.timeBlock,
+            notes: action.notes, created_at: new Date().toISOString(),
+            echo_tech: tech, echo_room: room,
+          } as EchoScheduleAssignment]);
+          toast.info(`Undid: removed ${action.techName}`);
+          try {
+            const res = await fetch('/api/echo-schedule', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ date: action.date, echo_room_id: action.roomId, echo_tech_id: action.techId, time_block: action.timeBlock, notes: action.notes })
+            });
+            if (res.ok) {
+              const real = await res.json();
+              setAssignments(prev => prev.map(a => a.id === optimisticId ? { ...real, echo_tech: tech, echo_room: room } : a));
+              action.assignmentId = real.id;
+            } else {
+              setAssignments(prev => prev.filter(a => a.id !== optimisticId));
+              toast.error('Undo failed on server');
+            }
+          } catch {
+            setAssignments(prev => prev.filter(a => a.id !== optimisticId));
+            toast.error('Undo failed on server');
+          }
+          undoRedo.pushRedo(action);
+          break;
+        }
+        case 'move_assignment': {
+          const fromRoom = echoRooms.find(r => r.id === action.fromRoomId);
+          setAssignments(prev => prev.map(a =>
+            a.id === action.assignmentId
+              ? { ...a, echo_room_id: action.fromRoomId, date: action.fromDate, time_block: action.fromTimeBlock, echo_room: fromRoom }
+              : a
+          ));
+          toast.info(`Undid: moved ${action.techName}`);
+          try {
+            const res = await fetch('/api/echo-schedule', {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: action.assignmentId, echo_room_id: action.fromRoomId, date: action.fromDate, time_block: action.fromTimeBlock })
+            });
+            if (!res.ok) { fetchData(); }
+          } catch { fetchData(); }
+          undoRedo.pushRedo(action);
+          break;
+        }
+        case 'bulk_create': {
+          const ids = new Set(action.assignments.map(a => a.assignmentId));
+          setAssignments(prev => prev.filter(a => !ids.has(a.id)));
+          toast.info(`Undid: bulk assigned ${action.techName} (${action.assignments.length})`);
+          for (const a of action.assignments) {
+            try { await fetch(`/api/echo-schedule?id=${a.assignmentId}`, { method: 'DELETE' }); } catch { /* best effort */ }
+          }
+          undoRedo.pushRedo(action);
+          break;
+        }
+      }
+    } finally {
+      undoingRef.current = false;
+    }
+  };
+
+  // Redo last undone action
+  const handleRedo = async () => {
+    if (undoingRef.current) return;
+    undoingRef.current = true;
+    try {
+      const action = undoRedo.popRedo();
+      if (!action) return;
+
+      switch (action.type) {
+        case 'create_assignment': {
+          const tech = echoTechs.find(t => t.id === action.techId);
+          const room = echoRooms.find(r => r.id === action.roomId);
+          const optimisticId = `optimistic-redo-${Date.now()}`;
+          setAssignments(prev => [...prev, {
+            id: optimisticId, date: action.date, echo_room_id: action.roomId,
+            echo_tech_id: action.techId, time_block: action.timeBlock,
+            notes: action.notes, created_at: new Date().toISOString(),
+            echo_tech: tech, echo_room: room,
+          } as EchoScheduleAssignment]);
+          toast.info(`Redid: assigned ${action.techName}`);
+          try {
+            const res = await fetch('/api/echo-schedule', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ date: action.date, echo_room_id: action.roomId, echo_tech_id: action.techId, time_block: action.timeBlock, notes: action.notes })
+            });
+            if (res.ok) {
+              const real = await res.json();
+              setAssignments(prev => prev.map(a => a.id === optimisticId ? { ...real, echo_tech: tech, echo_room: room } : a));
+              action.assignmentId = real.id;
+            } else {
+              setAssignments(prev => prev.filter(a => a.id !== optimisticId));
+              toast.error('Redo failed');
+            }
+          } catch {
+            setAssignments(prev => prev.filter(a => a.id !== optimisticId));
+            toast.error('Redo failed');
+          }
+          undoRedo.pushUndo(action);
+          break;
+        }
+        case 'delete_assignment': {
+          setAssignments(prev => prev.filter(a => a.id !== action.assignmentId));
+          toast.info(`Redid: removed ${action.techName}`);
+          try {
+            const res = await fetch(`/api/echo-schedule?id=${action.assignmentId}`, { method: 'DELETE' });
+            if (!res.ok) { fetchData(); }
+          } catch { fetchData(); }
+          undoRedo.pushUndo(action);
+          break;
+        }
+        case 'move_assignment': {
+          const toRoom = echoRooms.find(r => r.id === action.toRoomId);
+          setAssignments(prev => prev.map(a =>
+            a.id === action.assignmentId
+              ? { ...a, echo_room_id: action.toRoomId, date: action.toDate, time_block: action.toTimeBlock, echo_room: toRoom }
+              : a
+          ));
+          toast.info(`Redid: moved ${action.techName}`);
+          try {
+            const res = await fetch('/api/echo-schedule', {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: action.assignmentId, echo_room_id: action.toRoomId, date: action.toDate, time_block: action.toTimeBlock })
+            });
+            if (!res.ok) { fetchData(); }
+          } catch { fetchData(); }
+          undoRedo.pushUndo(action);
+          break;
+        }
+        case 'bulk_create': {
+          const tech = echoTechs.find(t => t.id === action.assignments[0]?.techId);
+          const newAssignments: typeof action.assignments = [];
+          toast.info(`Redid: bulk assigned ${action.techName} (${action.assignments.length})`);
+          for (const a of action.assignments) {
+            try {
+              const res = await fetch('/api/echo-schedule', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: a.date, echo_room_id: a.roomId, echo_tech_id: a.techId, time_block: a.timeBlock })
+              });
+              if (res.ok) {
+                const real = await res.json();
+                const room = echoRooms.find(r => r.id === a.roomId);
+                setAssignments(prev => [...prev, { ...real, echo_tech: tech, echo_room: room }]);
+                newAssignments.push({ ...a, assignmentId: real.id });
+              }
+            } catch { /* best effort */ }
+          }
+          action.assignments = newAssignments;
+          undoRedo.pushUndo(action);
+          break;
+        }
+      }
+    } finally {
+      undoingRef.current = false;
     }
   };
 
@@ -338,6 +859,29 @@ export default function EchoPage() {
       console.error('Error saving room order:', error);
     }
   };
+
+  // Keyboard shortcuts for undo/redo
+  const handleUndoRef = useRef(handleUndo);
+  const handleRedoRef = useRef(handleRedo);
+  handleUndoRef.current = handleUndo;
+  handleRedoRef.current = handleRedo;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!isAdminMode) return;
+      const isMod = e.metaKey || e.ctrlKey;
+      if (isMod && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndoRef.current();
+      }
+      if ((isMod && e.key === 'z' && e.shiftKey) || (isMod && e.key === 'y')) {
+        e.preventDefault();
+        handleRedoRef.current();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isAdminMode]);
 
   return (
     <div className="min-h-screen p-4" style={{ backgroundColor: colors.lightGray }}>
@@ -372,6 +916,38 @@ export default function EchoPage() {
 
             {isAdminMode && (
               <>
+                {/* Undo/Redo */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleUndo}
+                    disabled={!undoRedo.canUndo}
+                    className="px-2 py-1 rounded text-sm font-medium border transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-white hover:bg-gray-100"
+                    style={{ borderColor: colors.border }}
+                    title="Undo (Ctrl+Z)"
+                  >
+                    <span className="flex items-center gap-1">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a5 5 0 015 5v2M3 10l4-4M3 10l4 4" />
+                      </svg>
+                      Undo
+                    </span>
+                  </button>
+                  <button
+                    onClick={handleRedo}
+                    disabled={!undoRedo.canRedo}
+                    className="px-2 py-1 rounded text-sm font-medium border transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-white hover:bg-gray-100"
+                    style={{ borderColor: colors.border }}
+                    title="Redo (Ctrl+Shift+Z)"
+                  >
+                    <span className="flex items-center gap-1">
+                      Redo
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10H11a5 5 0 00-5 5v2M21 10l-4-4M21 10l-4 4" />
+                      </svg>
+                    </span>
+                  </button>
+                </div>
+
                 {/* Templates Dropdown */}
                 <div className="relative">
                   <button
@@ -420,6 +996,15 @@ export default function EchoPage() {
                     </div>
                   )}
                 </div>
+
+                <button
+                  onClick={handleCopyPreviousWeek}
+                  disabled={copyingWeek}
+                  className="px-3 py-1 rounded text-sm font-medium text-white disabled:opacity-50"
+                  style={{ backgroundColor: colors.lightBlue }}
+                >
+                  {copyingWeek ? 'Copying...' : 'Copy Previous Week'}
+                </button>
 
                 <Link
                   href="/admin/echo"
@@ -516,6 +1101,10 @@ export default function EchoPage() {
                 isAdmin={isAdminMode}
                 onCellClick={handleCellClick}
                 onPTOClick={handlePTOClick}
+                onQuickDelete={handleDeleteAssignment}
+                onQuickAssign={handleQuickAssign}
+                onBulkAssign={handleBulkAssign}
+                onMoveAssignment={handleMoveAssignment}
                 collapsedCategories={collapsedCategories}
                 onToggleCategory={toggleCategory}
                 onRoomReorder={handleRoomReorder}
@@ -536,6 +1125,7 @@ export default function EchoPage() {
                 providers={mainProviders}
                 isAdmin={isAdminMode}
                 onAssignmentChange={fetchProvidersData}
+                holidays={holidays}
               />
             )}
           </div>
@@ -550,6 +1140,8 @@ export default function EchoPage() {
         timeBlock={selectedTimeBlock}
         echoTechs={echoTechs}
         currentAssignments={getCurrentAssignments()}
+        allAssignments={assignments}
+        ptoDays={ptoDays}
         onClose={() => setShowAssignmentModal(false)}
         onSave={handleSaveAssignment}
         onDelete={handleDeleteAssignment}
