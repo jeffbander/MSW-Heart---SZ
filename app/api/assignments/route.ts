@@ -95,12 +95,8 @@ export async function POST(request: Request) {
       );
     }
 
-    if (isNewPTO && existingAssignments?.some((a: any) => !a.is_pto && a.service?.name !== 'PTO')) {
-      return NextResponse.json(
-        { error: 'Provider has work assignments for this time block. Remove them before assigning PTO.' },
-        { status: 400 }
-      );
-    }
+    const hasWorkOverlap = isNewPTO && existingAssignments?.some((a: any) => !a.is_pto && a.service?.name !== 'PTO');
+    // Allow PTO even with work overlap — frontend will highlight the conflict
 
     // Check availability rules (skip if force_override is set)
     if (!body.force_override) {
@@ -165,6 +161,9 @@ export async function POST(request: Request) {
     }
 
     console.log('Created assignment result:', JSON.stringify(data, null, 2));
+    if (hasWorkOverlap) {
+      return NextResponse.json({ ...data, warning: 'Provider has work assignments that overlap with this PTO' });
+    }
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error creating assignment:', error);

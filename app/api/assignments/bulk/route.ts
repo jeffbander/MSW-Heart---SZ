@@ -85,9 +85,7 @@ export async function POST(request: Request) {
         conflicts.push(`Provider has PTO on ${assignment.date} (${assignment.time_block}) and cannot be assigned work`);
       }
 
-      if (isNewPTO && relevantExisting.some((a: any) => !a.is_pto && a.service?.name !== 'PTO')) {
-        conflicts.push(`Provider has work on ${assignment.date} (${assignment.time_block}). Remove before assigning PTO.`);
-      }
+      // Allow PTO even with work overlap — frontend will highlight the conflict
     }
 
     if (conflicts.length > 0) {

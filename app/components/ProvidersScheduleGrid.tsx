@@ -200,6 +200,16 @@ export default function ProvidersScheduleGrid({
     return match || null;
   };
 
+  // Check if a provider has PTO overlapping with a given date/time_block
+  const providerHasPTO = (providerId: string, date: string, timeBlock: 'AM' | 'PM'): boolean => {
+    return assignments.some(a =>
+      a.provider_id === providerId &&
+      a.date === date &&
+      a.is_pto &&
+      (a.time_block === 'BOTH' || a.time_block === timeBlock)
+    );
+  };
+
   const handleCellClick = (service: Service, date: string, timeBlock: 'AM' | 'PM') => {
     if (!isAdmin) return;
     if (holidayMap.has(date)) return; // Non-clickable on holidays
@@ -460,6 +470,9 @@ export default function ProvidersScheduleGrid({
     const assignment = getAssignment(service, date, timeBlock);
     const displayName = assignment?.provider?.name ? getLastName(assignment.provider.name) : '';
     const isEmpty = !displayName;
+    const hasPTOOverlap = assignment?.provider_id && !assignment.is_pto
+      ? providerHasPTO(assignment.provider_id, date, timeBlock)
+      : false;
 
     return (
       <td
@@ -469,13 +482,17 @@ export default function ProvidersScheduleGrid({
         } ${isEmpty ? 'text-gray-300' : ''}`}
         style={{
           borderColor: colors.border,
-          color: isEmpty ? undefined : colors.primaryBlue,
-          backgroundColor: isEmpty ? undefined : `${colors.lightBlue}10`,
+          color: isEmpty ? undefined : hasPTOOverlap ? '#B45309' : colors.primaryBlue,
+          backgroundColor: isEmpty ? undefined : hasPTOOverlap ? '#FEF3C7' : `${colors.lightBlue}10`,
         }}
         onClick={() => handleCellClick(service, date, timeBlock)}
-        title={assignment?.provider?.name || 'Unassigned'}
+        title={
+          hasPTOOverlap
+            ? `${assignment?.provider?.name} — has PTO overlap`
+            : assignment?.provider?.name || 'Unassigned'
+        }
       >
-        {displayName || '--'}
+        {hasPTOOverlap ? `⚠ ${displayName}` : displayName || '--'}
       </td>
     );
   };
@@ -511,6 +528,9 @@ export default function ProvidersScheduleGrid({
     const assignment = getAssignment(service, date, 'AM') || getAssignment(service, date, 'PM');
     const displayName = assignment?.provider?.name ? getLastName(assignment.provider.name) : '';
     const isEmpty = !displayName;
+    const hasPTOOverlap = assignment?.provider_id && !assignment.is_pto
+      ? providerHasPTO(assignment.provider_id, date, 'AM') || providerHasPTO(assignment.provider_id, date, 'PM')
+      : false;
 
     // Determine what time_block to use for modal - use BOTH if service is BOTH, otherwise AM
     const effectiveTimeBlock = service.time_block === 'BOTH' ? 'AM' : service.time_block as 'AM' | 'PM';
@@ -524,13 +544,17 @@ export default function ProvidersScheduleGrid({
         } ${isEmpty ? 'text-gray-300' : ''}`}
         style={{
           borderColor: colors.border,
-          color: isEmpty ? undefined : colors.primaryBlue,
-          backgroundColor: isEmpty ? undefined : `${colors.lightBlue}10`,
+          color: isEmpty ? undefined : hasPTOOverlap ? '#B45309' : colors.primaryBlue,
+          backgroundColor: isEmpty ? undefined : hasPTOOverlap ? '#FEF3C7' : `${colors.lightBlue}10`,
         }}
         onClick={() => handleCellClick(service, date, effectiveTimeBlock)}
-        title={assignment?.provider?.name || 'Unassigned'}
+        title={
+          hasPTOOverlap
+            ? `${assignment?.provider?.name} — has PTO overlap`
+            : assignment?.provider?.name || 'Unassigned'
+        }
       >
-        {displayName || '--'}
+        {hasPTOOverlap ? `⚠ ${displayName}` : displayName || '--'}
       </td>
     );
   };
