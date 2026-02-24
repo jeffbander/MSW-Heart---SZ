@@ -94,6 +94,7 @@ interface ScheduleGridProps {
   isAdmin?: boolean
   onCellClick?: (roomId: string, date: string, timeBlock: 'AM' | 'PM') => void
   onPTOClick?: (date: string, timeBlock: 'AM' | 'PM') => void
+  onPTODelete?: (ptoId: string) => void
   onQuickDelete?: (assignmentId: string) => void
   onQuickAssign?: (roomId: string, date: string, timeBlock: 'AM' | 'PM', techId: string) => void
   onBulkAssign?: (cells: CellId[], techId: string) => void
@@ -219,6 +220,7 @@ function transformRooms(
 }
 
 interface PTOEntry {
+  id: string
   name: string
   timeBlock: 'AM' | 'PM' | 'BOTH'
 }
@@ -239,6 +241,7 @@ function transformPTO(
 
     const dayPTO = ptoDays.filter(p => p.date === dateStr)
     const entries: PTOEntry[] = dayPTO.map(p => ({
+      id: p.id,
       name: techMap.get(p.echo_tech_id)?.name || 'Unknown',
       timeBlock: (p.time_block as 'AM' | 'PM' | 'BOTH') || 'BOTH',
     }))
@@ -937,7 +940,8 @@ function PTORow({
   showWeekend,
   ptoData,
   isAdmin,
-  onPTOClick
+  onPTOClick,
+  onPTODelete
 }: {
   weekdayDates: WeekDate[]
   weekendDates: WeekDate[]
@@ -945,6 +949,7 @@ function PTORow({
   ptoData: Record<string, PTOEntry[]>
   isAdmin?: boolean
   onPTOClick?: (date: string, timeBlock: 'AM' | 'PM') => void
+  onPTODelete?: (ptoId: string) => void
 }) {
   return (
     <tr className="bg-amber-50/50 border-b border-slate-200">
@@ -971,8 +976,20 @@ function PTORow({
               ) : amStaff.length > 0 ? (
                 <div className="flex flex-wrap gap-x-1 justify-center text-[13px]">
                   {amStaff.map((entry, idx) => (
-                    <span key={entry.name} className="text-amber-700">
+                    <span key={entry.id} className="group/pto inline-flex items-center text-amber-700">
                       {entry.name}
+                      {isAdmin && onPTODelete && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onPTODelete(entry.id)
+                          }}
+                          className="opacity-0 group-hover/pto:opacity-100 ml-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-600 transition-opacity"
+                          title="Remove PTO"
+                        >
+                          &times;
+                        </button>
+                      )}
                       {idx < amStaff.length - 1 && <span className="text-slate-400">,</span>}
                     </span>
                   ))}
@@ -993,8 +1010,20 @@ function PTORow({
               ) : pmStaff.length > 0 ? (
                 <div className="flex flex-wrap gap-x-1 justify-center text-[13px]">
                   {pmStaff.map((entry, idx) => (
-                    <span key={entry.name} className="text-amber-700">
+                    <span key={entry.id} className="group/pto inline-flex items-center text-amber-700">
                       {entry.name}
+                      {isAdmin && onPTODelete && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onPTODelete(entry.id)
+                          }}
+                          className="opacity-0 group-hover/pto:opacity-100 ml-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-600 transition-opacity"
+                          title="Remove PTO"
+                        >
+                          &times;
+                        </button>
+                      )}
                       {idx < pmStaff.length - 1 && <span className="text-slate-400">,</span>}
                     </span>
                   ))}
@@ -1186,6 +1215,7 @@ export function ScheduleGrid({
   isAdmin,
   onCellClick,
   onPTOClick,
+  onPTODelete,
   onQuickDelete,
   onQuickAssign,
   onBulkAssign,
@@ -1545,6 +1575,7 @@ export function ScheduleGrid({
                 ptoData={ptoData}
                 isAdmin={isAdmin}
                 onPTOClick={onPTOClick}
+                onPTODelete={onPTODelete}
               />
               {labSections.map((section) => (
                 <LabSectionComponent

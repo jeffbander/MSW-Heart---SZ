@@ -317,6 +317,27 @@ export default function EchoPage() {
     }
   };
 
+  // Delete PTO (optimistic)
+  const handleDeletePTO = async (ptoId: string) => {
+    const removed = ptoDays.find(p => p.id === ptoId);
+    setPtoDays(prev => prev.filter(p => p.id !== ptoId));
+    toast.success('PTO removed');
+
+    try {
+      const response = await fetch(`/api/echo-pto?id=${ptoId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        if (removed) setPtoDays(prev => [...prev, removed]);
+        toast.error('Failed to delete PTO');
+      }
+    } catch {
+      if (removed) setPtoDays(prev => [...prev, removed]);
+      toast.error('Failed to delete PTO');
+    }
+  };
+
   // Add PTO (optimistic)
   const handleAddPTO = async (techId: string, reason: string | null, timeBlock: 'AM' | 'PM' | 'BOTH') => {
     const tech = echoTechs.find(t => t.id === techId);
@@ -1102,6 +1123,7 @@ export default function EchoPage() {
                 isAdmin={isAdminMode}
                 onCellClick={handleCellClick}
                 onPTOClick={handlePTOClick}
+                onPTODelete={handleDeletePTO}
                 onQuickDelete={handleDeleteAssignment}
                 onQuickAssign={handleQuickAssign}
                 onBulkAssign={handleBulkAssign}
