@@ -97,6 +97,33 @@ export function isAuthError(result: AppUser | NextResponse): result is NextRespo
 }
 
 /**
+ * Require testing (echo) management access.
+ * Returns user if super_admin or has can_manage_testing flag.
+ * Returns 401 if not authenticated, 403 if insufficient permissions.
+ */
+export async function requireTestingAccess(
+  request: NextRequest
+): Promise<AppUser | NextResponse> {
+  const user = await getAuthUser(request);
+
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Authentication required' },
+      { status: 401 }
+    );
+  }
+
+  if (user.role !== 'super_admin' && !user.can_manage_testing) {
+    return NextResponse.json(
+      { error: 'Insufficient permissions' },
+      { status: 403 }
+    );
+  }
+
+  return user;
+}
+
+/**
  * Check if a user can edit a specific service
  */
 export function canUserEditService(user: AppUser, serviceId: string): boolean {

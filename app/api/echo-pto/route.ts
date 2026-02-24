@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { requireTestingAccess, isAuthError } from '@/lib/auth';
 
 // GET /api/echo-pto - Get PTO entries for date range
 export async function GET(request: Request) {
@@ -36,8 +37,10 @@ export async function GET(request: Request) {
 }
 
 // POST /api/echo-pto - Create a PTO entry
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireTestingAccess(request);
+    if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { date, echo_tech_id, time_block, reason } = body;
 
@@ -83,8 +86,10 @@ export async function POST(request: Request) {
 }
 
 // PUT /api/echo-pto - Update a PTO entry
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
   try {
+    const authResult = await requireTestingAccess(request);
+    if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { id, ...updates } = body;
 
@@ -118,8 +123,10 @@ export async function PUT(request: Request) {
 }
 
 // DELETE /api/echo-pto - Delete a PTO entry
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
   try {
+    const authResult = await requireTestingAccess(request);
+    if (isAuthError(authResult)) return authResult;
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

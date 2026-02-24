@@ -6,10 +6,9 @@ import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTempla
 import { ScheduleGrid } from '@/components/schedule-grid';
 import EchoAssignmentModal from '@/app/components/EchoAssignmentModal';
 import ProvidersScheduleGrid from '@/app/components/ProvidersScheduleGrid';
-import { useAdmin } from '@/app/contexts/AuthContext';
+import { useAuth } from '@/app/contexts/AuthContext';
 import { useToast } from '@/app/contexts/ToastContext';
 import { useUndoRedo } from './useUndoRedo';
-import PasscodeModal from '@/app/components/layout/PasscodeModal';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -37,11 +36,10 @@ export default function EchoPage() {
   const [loading, setLoading] = useState(true);
 
   // Admin state
-  const { isAdminMode, authenticate, logout } = useAdmin();
+  const { canManageTesting, user, requestLogin } = useAuth();
   const toast = useToast();
   const undoRedo = useUndoRedo();
   const undoingRef = useRef(false);
-  const [showPasscodeModal, setShowPasscodeModal] = useState(false);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'techs' | 'providers'>('techs');
@@ -181,10 +179,10 @@ export default function EchoPage() {
   };
 
   useEffect(() => {
-    if (isAdminMode) {
+    if (canManageTesting) {
       fetchTemplates();
     }
-  }, [isAdminMode]);
+  }, [canManageTesting]);
 
   // Format week label
   const formatWeekLabel = () => {
@@ -892,7 +890,7 @@ export default function EchoPage() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!isAdminMode) return;
+      if (!canManageTesting) return;
       const isMod = e.metaKey || e.ctrlKey;
       if (isMod && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
@@ -905,7 +903,7 @@ export default function EchoPage() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isAdminMode]);
+  }, [canManageTesting]);
 
   return (
     <div className="min-h-screen p-4" style={{ backgroundColor: colors.lightGray }}>
@@ -925,20 +923,26 @@ export default function EchoPage() {
             </h1>
           </div>
 
-          {/* Admin Toggle */}
+          {/* Access Badge */}
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => isAdminMode ? logout() : setShowPasscodeModal(true)}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                isAdminMode
-                  ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {isAdminMode ? 'Exit Admin' : 'Admin Mode'}
-            </button>
+            {canManageTesting ? (
+              <span className="px-3 py-1 rounded text-sm font-medium bg-green-100 text-green-700">
+                Edit Mode
+              </span>
+            ) : !user ? (
+              <button
+                onClick={requestLogin}
+                className="px-3 py-1 rounded text-sm font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+              >
+                Log in to edit
+              </button>
+            ) : (
+              <span className="px-3 py-1 rounded text-sm font-medium bg-gray-100 text-gray-500">
+                View Only
+              </span>
+            )}
 
-            {isAdminMode && (
+            {canManageTesting && (
               <>
                 {/* Undo/Redo */}
                 <div className="flex items-center gap-1">
@@ -1122,7 +1126,7 @@ export default function EchoPage() {
                 assignments={assignments}
                 ptoDays={ptoDays}
                 holidays={holidays}
-                isAdmin={isAdminMode}
+                isAdmin={canManageTesting}
                 onCellClick={handleCellClick}
                 onPTOClick={handlePTOClick}
                 onPTODelete={handleDeletePTO}
@@ -1148,7 +1152,7 @@ export default function EchoPage() {
                 assignments={mainAssignments}
                 services={mainServices}
                 providers={mainProviders}
-                isAdmin={isAdminMode}
+                isAdmin={canManageTesting}
                 onAssignmentChange={fetchProvidersData}
                 holidays={holidays}
               />
@@ -1247,13 +1251,6 @@ export default function EchoPage() {
           </div>
         </div>
       )}
-
-      {/* Passcode Modal */}
-      <PasscodeModal
-        isOpen={showPasscodeModal}
-        onClose={() => setShowPasscodeModal(false)}
-        onAuthenticate={authenticate}
-      />
 
       {/* Close dropdown when clicking outside */}
       {showTemplateDropdown && (

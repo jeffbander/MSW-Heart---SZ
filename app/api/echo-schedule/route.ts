@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { requireTestingAccess, isAuthError } from '@/lib/auth';
 
 // GET /api/echo-schedule - Get assignments for date range
 export async function GET(request: Request) {
@@ -37,8 +38,10 @@ export async function GET(request: Request) {
 }
 
 // POST /api/echo-schedule - Create an assignment
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireTestingAccess(request);
+    if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { date, echo_room_id, echo_tech_id, time_block, notes } = body;
 
@@ -86,8 +89,10 @@ export async function POST(request: Request) {
 }
 
 // PUT /api/echo-schedule - Update an assignment
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
   try {
+    const authResult = await requireTestingAccess(request);
+    if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { id, ...updates } = body;
 
@@ -122,8 +127,10 @@ export async function PUT(request: Request) {
 }
 
 // DELETE /api/echo-schedule - Delete an assignment
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
   try {
+    const authResult = await requireTestingAccess(request);
+    if (isAuthError(authResult)) return authResult;
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 

@@ -1,9 +1,12 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { requireTestingAccess, isAuthError } from '@/lib/auth';
 
 // POST /api/echo-rooms/reorder - Update display order for multiple rooms
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireTestingAccess(request);
+    if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { roomIds } = body;
 
