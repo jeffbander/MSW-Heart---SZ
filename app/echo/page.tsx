@@ -90,12 +90,14 @@ export default function EchoPage() {
     });
   };
 
+  // Freeze "today" on mount so the week doesn't shift if the page stays open past midnight
+  const frozenToday = useRef(new Date()).current;
+
   // Calculate date range for current week
   const dateRange = useMemo(() => {
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - dayOfWeek + 1 + (weekOffset * 7));
+    const dayOfWeek = frozenToday.getDay();
+    const monday = new Date(frozenToday);
+    monday.setDate(frozenToday.getDate() - dayOfWeek + 1 + (weekOffset * 7));
 
     const dates: string[] = [];
     for (let i = 0; i < 7; i++) {
