@@ -13,7 +13,7 @@ function formatLocalDate(date: Date): string {
 // POST /api/echo-templates/apply - Apply template to date range
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'manage_templates');
     if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { templateId, startDate, endDate, fillEmptyOnly = true } = body;

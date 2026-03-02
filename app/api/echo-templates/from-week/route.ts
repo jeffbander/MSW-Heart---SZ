@@ -13,7 +13,7 @@ function formatLocalDate(date: Date): string {
 // POST /api/echo-templates/from-week - Create template from existing week
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'manage_templates');
     if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { name, description, weekStartDate } = body;

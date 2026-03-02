@@ -36,7 +36,7 @@ export default function EchoPage() {
   const [loading, setLoading] = useState(true);
 
   // Admin state
-  const { canManageTesting, user, requestLogin } = useAuth();
+  const { canManageTesting, canEditTestingAssignments, canEditTestingPto, canManageTestingTemplates, canManageTestingRooms, user, requestLogin } = useAuth();
   const toast = useToast();
   const undoRedo = useUndoRedo();
   const undoingRef = useRef(false);
@@ -179,10 +179,10 @@ export default function EchoPage() {
   };
 
   useEffect(() => {
-    if (canManageTesting) {
+    if (canManageTestingTemplates) {
       fetchTemplates();
     }
-  }, [canManageTesting]);
+  }, [canManageTestingTemplates]);
 
   // Format week label
   const formatWeekLabel = () => {
@@ -977,6 +977,7 @@ export default function EchoPage() {
                 </div>
 
                 {/* Templates Dropdown */}
+                {canManageTestingTemplates && (
                 <div className="relative">
                   <button
                     onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
@@ -1024,7 +1025,9 @@ export default function EchoPage() {
                     </div>
                   )}
                 </div>
+                )}
 
+                {canEditTestingAssignments && (
                 <button
                   onClick={handleCopyPreviousWeek}
                   disabled={copyingWeek}
@@ -1033,6 +1036,7 @@ export default function EchoPage() {
                 >
                   {copyingWeek ? 'Copying...' : 'Copy Previous Week'}
                 </button>
+                )}
 
                 <Link
                   href="/admin/echo"
@@ -1127,6 +1131,9 @@ export default function EchoPage() {
                 ptoDays={ptoDays}
                 holidays={holidays}
                 isAdmin={canManageTesting}
+                canEditAssignments={canEditTestingAssignments}
+                canEditPto={canEditTestingPto}
+                canReorderRooms={canManageTestingRooms}
                 onCellClick={handleCellClick}
                 onPTOClick={handlePTOClick}
                 onPTODelete={handleDeletePTO}

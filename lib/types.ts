@@ -4,6 +4,13 @@
 
 export type UserRole = 'super_admin' | 'scheduler_full' | 'scheduler_limited' | 'provider' | 'viewer';
 
+export interface TestingPermissions {
+  edit_assignments?: boolean;
+  edit_pto?: boolean;
+  manage_templates?: boolean;
+  manage_rooms?: boolean;
+}
+
 export interface AppUser {
   id: string;
   username: string;
@@ -13,6 +20,7 @@ export interface AppUser {
   allowed_service_ids: string[];
   is_active: boolean;
   can_manage_testing: boolean;
+  testing_permissions: TestingPermissions | null;
   created_at: string;
   updated_at: string;
 }

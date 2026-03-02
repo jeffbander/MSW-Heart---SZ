@@ -25,7 +25,7 @@ export async function GET() {
 // POST /api/echo-templates - Create a new template
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'manage_templates');
     if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { name, description } = body;
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 // PUT /api/echo-templates - Update a template
 export async function PUT(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'manage_templates');
     if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { id, name, description, is_active } = body;
@@ -100,7 +100,7 @@ export async function PUT(request: NextRequest) {
 // DELETE /api/echo-templates - Delete a template
 export async function DELETE(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'manage_templates');
     if (isAuthError(authResult)) return authResult;
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

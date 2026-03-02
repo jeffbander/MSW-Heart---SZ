@@ -92,6 +92,9 @@ interface ScheduleGridProps {
   ptoDays: EchoPTO[]
   holidays?: Holiday[]
   isAdmin?: boolean
+  canEditAssignments?: boolean
+  canEditPto?: boolean
+  canReorderRooms?: boolean
   onCellClick?: (roomId: string, date: string, timeBlock: 'AM' | 'PM') => void
   onPTOClick?: (date: string, timeBlock: 'AM' | 'PM') => void
   onPTODelete?: (ptoId: string) => void
@@ -579,6 +582,7 @@ function SortableRoomRow({
   isOdd,
   ptoData,
   isAdmin,
+  canReorderRooms,
   onCellClick,
   onQuickDelete,
   inlineAssignCell,
@@ -600,6 +604,7 @@ function SortableRoomRow({
   isOdd: boolean
   ptoData: Record<string, PTOEntry[]>
   isAdmin?: boolean
+  canReorderRooms?: boolean
   onCellClick?: (roomId: string, date: string, timeBlock: 'AM' | 'PM') => void
   onQuickDelete?: (assignmentId: string) => void
   inlineAssignCell: string | null
@@ -653,7 +658,7 @@ function SortableRoomRow({
     >
       <td className={cn("py-3 px-4 sticky left-0 z-10 border-r border-slate-200", bgColor)}>
         <div className="flex items-center gap-2">
-          {isAdmin && (
+          {(canReorderRooms ?? isAdmin) && (
             <button
               {...attributes}
               {...listeners}
@@ -802,6 +807,7 @@ function LabSectionComponent({
   showWeekend,
   ptoData,
   isAdmin,
+  canReorderRooms,
   onCellClick,
   onQuickDelete,
   isCollapsed,
@@ -825,6 +831,7 @@ function LabSectionComponent({
   showWeekend: boolean
   ptoData: Record<string, PTOEntry[]>
   isAdmin?: boolean
+  canReorderRooms?: boolean
   onCellClick?: (roomId: string, date: string, timeBlock: 'AM' | 'PM') => void
   onQuickDelete?: (assignmentId: string) => void
   isCollapsed?: boolean
@@ -879,6 +886,7 @@ function LabSectionComponent({
     showWeekend,
     ptoData,
     isAdmin,
+    canReorderRooms,
     onCellClick,
     onQuickDelete,
     inlineAssignCell,
@@ -1213,6 +1221,9 @@ export function ScheduleGrid({
   ptoDays,
   holidays = [],
   isAdmin,
+  canEditAssignments,
+  canEditPto,
+  canReorderRooms,
   onCellClick,
   onPTOClick,
   onPTODelete,
@@ -1419,7 +1430,8 @@ export function ScheduleGrid({
     }
   }
 
-  const isDragEnabled = !!(isAdmin && onMoveAssignment)
+  const effectiveAssignmentAdmin = canEditAssignments ?? isAdmin
+  const isDragEnabled = !!(effectiveAssignmentAdmin && onMoveAssignment)
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
@@ -1573,7 +1585,7 @@ export function ScheduleGrid({
                 weekendDates={weekendDates}
                 showWeekend={showWeekend}
                 ptoData={ptoData}
-                isAdmin={isAdmin}
+                isAdmin={canEditPto ?? isAdmin}
                 onPTOClick={onPTOClick}
                 onPTODelete={onPTODelete}
               />
@@ -1585,7 +1597,8 @@ export function ScheduleGrid({
                   weekendDates={weekendDates}
                   showWeekend={showWeekend}
                   ptoData={ptoData}
-                  isAdmin={isAdmin}
+                  isAdmin={effectiveAssignmentAdmin}
+                  canReorderRooms={canReorderRooms}
                   onCellClick={onCellClick}
                   onQuickDelete={onQuickDelete}
                   isCollapsed={collapsedCategories?.has(section.name)}
@@ -1619,7 +1632,7 @@ export function ScheduleGrid({
       </DndContext>
 
       {/* Multi-cell bulk assign bar (Feature 8) */}
-      {selectedCells.size > 0 && isAdmin && (
+      {selectedCells.size > 0 && effectiveAssignmentAdmin && (
         <BulkAssignBar
           count={selectedCells.size}
           echoTechs={echoTechs}

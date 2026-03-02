@@ -24,6 +24,11 @@ interface AuthContextType {
   canViewReports: boolean;
   canManageUsers: boolean;
   canManageTesting: boolean;
+  // Granular testing permissions
+  canEditTestingAssignments: boolean;
+  canEditTestingPto: boolean;
+  canManageTestingTemplates: boolean;
+  canManageTestingRooms: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -102,6 +107,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const canManageUsers = role === 'super_admin';
   const canManageTesting = isSuperAdmin || (user?.can_manage_testing ?? false);
 
+  // Granular testing permissions
+  // If testing_permissions is null (legacy), all features enabled when canManageTesting is true
+  const tp = user?.testing_permissions;
+  const hasTestingFeature = (feature: 'edit_assignments' | 'edit_pto' | 'manage_templates' | 'manage_rooms') => {
+    if (isSuperAdmin) return true;
+    if (!canManageTesting) return false;
+    if (!tp) return true; // null = all features
+    return tp[feature] !== false;
+  };
+  const canEditTestingAssignments = hasTestingFeature('edit_assignments');
+  const canEditTestingPto = hasTestingFeature('edit_pto');
+  const canManageTestingTemplates = hasTestingFeature('manage_templates');
+  const canManageTestingRooms = hasTestingFeature('manage_rooms');
+
   const canEditService = useCallback((serviceId: string): boolean => {
     if (!user) return false;
     if (user.role === 'super_admin' || user.role === 'scheduler_full') return true;
@@ -132,6 +151,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         canViewReports,
         canManageUsers,
         canManageTesting,
+        canEditTestingAssignments,
+        canEditTestingPto,
+        canManageTestingTemplates,
+        canManageTestingRooms,
       }}
     >
       {children}

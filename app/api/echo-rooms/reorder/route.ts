@@ -5,7 +5,7 @@ import { requireTestingAccess, isAuthError } from '@/lib/auth';
 // POST /api/echo-rooms/reorder - Update display order for multiple rooms
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'manage_rooms');
     if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { roomIds } = body;

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('app_users')
-      .select('id, username, display_name, role, provider_id, allowed_service_ids, is_active, can_manage_testing, created_at, updated_at')
+      .select('id, username, display_name, role, provider_id, allowed_service_ids, is_active, can_manage_testing, testing_permissions, created_at, updated_at')
       .order('display_name', { ascending: true });
 
     if (error) throw error;
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     if (isAuthError(authResult)) return authResult;
 
     const body = await request.json();
-    const { username, password, display_name, role, provider_id, allowed_service_ids, can_manage_testing } = body;
+    const { username, password, display_name, role, provider_id, allowed_service_ids, can_manage_testing, testing_permissions } = body;
 
     if (!username || !password || !display_name || !role) {
       return NextResponse.json(
@@ -63,8 +63,9 @@ export async function POST(request: NextRequest) {
         provider_id: provider_id || null,
         allowed_service_ids: allowed_service_ids || [],
         can_manage_testing: can_manage_testing || false,
+        testing_permissions: can_manage_testing ? (testing_permissions || null) : null,
       })
-      .select('id, username, display_name, role, provider_id, allowed_service_ids, is_active, can_manage_testing, created_at, updated_at')
+      .select('id, username, display_name, role, provider_id, allowed_service_ids, is_active, can_manage_testing, testing_permissions, created_at, updated_at')
       .single();
 
     if (error) {
@@ -120,7 +121,7 @@ export async function PUT(request: NextRequest) {
       .from('app_users')
       .update(updateData)
       .eq('id', id)
-      .select('id, username, display_name, role, provider_id, allowed_service_ids, is_active, can_manage_testing, created_at, updated_at')
+      .select('id, username, display_name, role, provider_id, allowed_service_ids, is_active, can_manage_testing, testing_permissions, created_at, updated_at')
       .single();
 
     if (error) throw error;

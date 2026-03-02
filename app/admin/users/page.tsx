@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { AppUser, UserRole, Provider, Service } from '@/lib/types';
+import { AppUser, UserRole, Provider, Service, TestingPermissions } from '@/lib/types';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -38,6 +38,13 @@ export default function ManageUsersPage() {
   // Create/Edit form
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+  const defaultTestingPermissions: TestingPermissions = {
+    edit_assignments: true,
+    edit_pto: true,
+    manage_templates: true,
+    manage_rooms: true,
+  };
+
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -47,6 +54,7 @@ export default function ManageUsersPage() {
     allowed_service_ids: [] as string[],
     is_active: true,
     can_manage_testing: false,
+    testing_permissions: defaultTestingPermissions as TestingPermissions,
   });
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -87,6 +95,7 @@ export default function ManageUsersPage() {
       allowed_service_ids: [],
       is_active: true,
       can_manage_testing: false,
+      testing_permissions: { ...defaultTestingPermissions },
     });
     setFormError('');
     setShowForm(true);
@@ -103,6 +112,7 @@ export default function ManageUsersPage() {
       allowed_service_ids: user.allowed_service_ids || [],
       is_active: user.is_active,
       can_manage_testing: user.can_manage_testing || false,
+      testing_permissions: user.testing_permissions || { ...defaultTestingPermissions },
     });
     setFormError('');
     setShowForm(true);
@@ -124,6 +134,7 @@ export default function ManageUsersPage() {
           allowed_service_ids: formData.allowed_service_ids,
           is_active: formData.is_active,
           can_manage_testing: formData.can_manage_testing,
+          testing_permissions: formData.can_manage_testing ? formData.testing_permissions : null,
         };
         if (formData.password) {
           body.password = formData.password;
@@ -158,6 +169,7 @@ export default function ManageUsersPage() {
             provider_id: formData.provider_id || null,
             allowed_service_ids: formData.allowed_service_ids,
             can_manage_testing: formData.can_manage_testing,
+            testing_permissions: formData.can_manage_testing ? formData.testing_permissions : null,
           }),
         });
 
@@ -259,7 +271,16 @@ export default function ManageUsersPage() {
                       {ROLE_LABELS[user.role]}
                     </span>
                     {user.can_manage_testing && (
-                      <span className="ml-1 px-2 py-1 rounded text-xs font-medium text-white bg-amber-500">
+                      <span className="ml-1 px-2 py-1 rounded text-xs font-medium text-white bg-amber-500" title={
+                        user.testing_permissions
+                          ? [
+                              user.testing_permissions.edit_assignments !== false && 'Assignments',
+                              user.testing_permissions.edit_pto !== false && 'PTO',
+                              user.testing_permissions.manage_templates !== false && 'Templates',
+                              user.testing_permissions.manage_rooms !== false && 'Rooms',
+                            ].filter(Boolean).join(', ')
+                          : 'All features'
+                      }>
                         Testing
                       </span>
                     )}
@@ -426,8 +447,35 @@ export default function ManageUsersPage() {
                   <span className="text-sm font-medium">Can Manage Testing</span>
                 </label>
                 <p className="text-xs text-gray-500 mt-1 ml-5">
-                  Grants admin access to the Testing/Echo page (manage techs, rooms, templates, edit schedule)
+                  Grants edit access to the Testing/Echo page. Select which features below.
                 </p>
+
+                {formData.can_manage_testing && (
+                  <div className="ml-5 mt-2 pl-3 border-l-2 space-y-2" style={{ borderColor: colors.teal }}>
+                    {([
+                      { key: 'edit_assignments' as const, label: 'Edit Assignments', desc: 'Add, remove, move, quick-assign, bulk-assign, copy previous week' },
+                      { key: 'edit_pto' as const, label: 'Edit PTO', desc: 'Add and remove tech PTO entries' },
+                      { key: 'manage_templates' as const, label: 'Manage Templates', desc: 'Save current week as template, apply templates' },
+                      { key: 'manage_rooms' as const, label: 'Manage Rooms', desc: 'Reorder room display order via drag and drop' },
+                    ]).map(({ key, label, desc }) => (
+                      <label key={key} className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={formData.testing_permissions[key] !== false}
+                          onChange={e => setFormData(prev => ({
+                            ...prev,
+                            testing_permissions: { ...prev.testing_permissions, [key]: e.target.checked },
+                          }))}
+                        />
+                        <div>
+                          <span className="text-sm font-medium">{label}</span>
+                          <p className="text-xs text-gray-500">{desc}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Active Toggle (edit only) */}
@@ -484,7 +532,7 @@ export default function ManageUsersPage() {
           <li><strong>Scheduler (Limited):</strong> Edit only assigned services, view reports, submit PTO on behalf</li>
           <li><strong>Provider:</strong> View schedule, manage own PTO, view reports</li>
           <li><strong>Viewer:</strong> View schedule, submit PTO, view reports</li>
-          <li><strong>Can Manage Testing:</strong> Any role with this permission gets admin access to the Testing/Echo page (manage techs, rooms, templates, edit schedule)</li>
+          <li><strong>Can Manage Testing:</strong> Any role with this permission gets edit access to the Testing/Echo page. Granular features: Assignments, PTO, Templates, Room Reorder</li>
         </ul>
       </div>
     </div>

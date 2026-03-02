@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 // POST /api/echo-pto - Create a PTO entry
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'edit_pto');
     if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { date, echo_tech_id, time_block, reason } = body;
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
 // PUT /api/echo-pto - Update a PTO entry
 export async function PUT(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'edit_pto');
     if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { id, ...updates } = body;
@@ -125,7 +125,7 @@ export async function PUT(request: NextRequest) {
 // DELETE /api/echo-pto - Delete a PTO entry
 export async function DELETE(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'edit_pto');
     if (isAuthError(authResult)) return authResult;
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

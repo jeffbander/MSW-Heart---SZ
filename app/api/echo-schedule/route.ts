@@ -40,7 +40,7 @@ export async function GET(request: Request) {
 // POST /api/echo-schedule - Create an assignment
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'edit_assignments');
     if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { date, echo_room_id, echo_tech_id, time_block, notes } = body;
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
 // PUT /api/echo-schedule - Update an assignment
 export async function PUT(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'edit_assignments');
     if (isAuthError(authResult)) return authResult;
     const body = await request.json();
     const { id, ...updates } = body;
@@ -129,7 +129,7 @@ export async function PUT(request: NextRequest) {
 // DELETE /api/echo-schedule - Delete an assignment
 export async function DELETE(request: NextRequest) {
   try {
-    const authResult = await requireTestingAccess(request);
+    const authResult = await requireTestingAccess(request, 'edit_assignments');
     if (isAuthError(authResult)) return authResult;
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

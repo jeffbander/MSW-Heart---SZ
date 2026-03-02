@@ -3,6 +3,15 @@ import { supabase } from './supabase';
 
 export type UserRole = 'super_admin' | 'scheduler_full' | 'scheduler_limited' | 'provider' | 'viewer';
 
+export type TestingFeature = 'edit_assignments' | 'edit_pto' | 'manage_templates' | 'manage_rooms';
+
+export interface TestingPermissions {
+  edit_assignments?: boolean;
+  edit_pto?: boolean;
+  manage_templates?: boolean;
+  manage_rooms?: boolean;
+}
+
 export interface AppUser {
   id: string;
   username: string;
@@ -12,6 +21,7 @@ export interface AppUser {
   allowed_service_ids: string[];
   is_active: boolean;
   can_manage_testing: boolean;
+  testing_permissions: TestingPermissions | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,7 +42,7 @@ function getSessionToken(request: NextRequest): string | null {
  */
 export async function getAuthUser(request: NextRequest): Promise<AppUser | null> {
   const token = getSessionToken(request);
-  if (!token) return null;
+  if (!token) { console.log('[auth] no token found'); return null; }
 
   // Look up session
   const { data: session, error: sessionError } = await supabase
@@ -41,7 +51,10 @@ export async function getAuthUser(request: NextRequest): Promise<AppUser | null>
     .eq('token', token)
     .single();
 
-  if (sessionError || !session) return null;
+  if (sessionError || !session) {
+    console.log('[auth] session lookup failed:', sessionError?.message || 'no session found');
+    return null;
+  }
 
   // Check expiry
   if (new Date(session.expires_at) < new Date()) {
@@ -53,7 +66,7 @@ export async function getAuthUser(request: NextRequest): Promise<AppUser | null>
   // Look up user
   const { data: user, error: userError } = await supabase
     .from('app_users')
-    .select('id, username, display_name, role, provider_id, allowed_service_ids, is_active, can_manage_testing, created_at, updated_at')
+    .select('id, username, display_name, role, provider_id, allowed_service_ids, is_active, can_manage_testing, testing_permissions, created_at, updated_at')
     .eq('id', session.user_id)
     .single();
 
@@ -97,12 +110,27 @@ export function isAuthError(result: AppUser | NextResponse): result is NextRespo
 }
 
 /**
+ * Check if a user has a specific testing feature permission.
+ * Super admins always have all features.
+ * If testing_permissions is null (legacy), all features are enabled.
+ */
+export function hasTestingFeature(user: AppUser, feature: TestingFeature): boolean {
+  if (user.role === 'super_admin') return true;
+  if (!user.can_manage_testing) return false;
+  // Null permissions = all features enabled (backward compatible)
+  if (!user.testing_permissions) return true;
+  return user.testing_permissions[feature] !== false;
+}
+
+/**
  * Require testing (echo) management access.
- * Returns user if super_admin or has can_manage_testing flag.
+ * Optionally checks a specific feature permission.
+ * Returns user if super_admin or has can_manage_testing flag (+ feature if specified).
  * Returns 401 if not authenticated, 403 if insufficient permissions.
  */
 export async function requireTestingAccess(
-  request: NextRequest
+  request: NextRequest,
+  feature?: TestingFeature
 ): Promise<AppUser | NextResponse> {
   const user = await getAuthUser(request);
 
@@ -116,6 +144,13 @@ export async function requireTestingAccess(
   if (user.role !== 'super_admin' && !user.can_manage_testing) {
     return NextResponse.json(
       { error: 'Insufficient permissions' },
+      { status: 403 }
+    );
+  }
+
+  if (feature && !hasTestingFeature(user, feature)) {
+    return NextResponse.json(
+      { error: 'Insufficient permissions for this feature' },
       { status: 403 }
     );
   }
