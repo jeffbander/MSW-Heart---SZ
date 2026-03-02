@@ -27,8 +27,8 @@ const mainTabs: NavItem[] = [
   { id: 'schedule', label: 'Schedule', href: '/' },
   { id: 'echo', label: 'Testing', href: '/echo' },
   { id: 'pto', label: 'Submit PTO', href: '/pto' },
-  { id: 'statistics', label: 'Statistics', href: '/statistics', comingSoon: true },
-  { id: 'data', label: 'Data', href: '/data', comingSoon: true },
+  { id: 'statistics', label: 'Statistics', href: '/statistics' },
+  { id: 'data', label: 'Data', href: '/data' },
   { id: 'providers', label: 'Providers', href: '/providers' },
 ];
 

@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import XlsxPopulate from 'xlsx-populate';
 
 // ── Report Type Detection ──
 
@@ -789,3 +790,502 @@ export function parseHistoricalStats(buffer: ArrayBuffer): HistoricalParseResult
     rowCount: rows.length,
   };
 }
+
+// ══════════════════════════════════════════════════════════════
+// Statistics Dashboard Parsers (Phase 1)
+// These handle the actual Epic report exports (different format
+// from the existing parsers above which use a different column layout)
+// ══════════════════════════════════════════════════════════════
+
+// ── Statistics Types ──
+
+export interface StatOfficeVisitRecord {
+  startDate: string | null;
+  endDate: string | null;
+  visitDate: string;
+  appointmentTime: string;
+  patientName: string;
+  mrn: string;
+  appointmentStatus: string;  // empty for completed, filled for all-statuses
+  lateCancel: number;         // 0 for completed, actual value for all-statuses
+  primaryProviderName: string;
+  visitTypeRaw: string;
+  visitTypeCategory: string;
+  primaryPayer: string;
+}
+
+export interface StatTestingVisitRecord {
+  startDate: string | null;
+  endDate: string | null;
+  visitDate: string;           // from Visit Date column
+  appointmentTime: string;
+  patientName: string;
+  mrn: string;
+  appointmentStatus: string;  // empty for completed, filled for all-statuses
+  lateCancel: number;
+  department: string;
+  departmentNormalized: string;
+  visitType: string;
+  resource: string;            // Appointment Primary Resource
+  primaryPayer: string;
+}
+
+export interface StatOrderRecord {
+  visitDate: string | null;
+  mrn: string;
+  patientName: string;
+  providerResourceName: string;
+  orderingProviderName: string;
+  referringProviderName: string;
+  orderId: string;
+  orderDescription: string;
+  orderCategory: string;
+  orderDate: string | null;
+  orderStatus: string;
+  apptStatus: string;
+  department: string;
+  coverage: string;
+}
+
+export interface StatParseResult<T> {
+  records: T[];
+  reportMonth: string; // YYYY-MM-01
+  rowCount: number;
+}
+
+// ── Visit Type Categorization (Office Visits) ──
+
+const STAT_VISIT_TYPE_MAP: Record<string, string> = {
+  'NEW PATIENT': 'New Patient',
+  'NEW PT-COVID19 SCREENING': 'New Patient',
+  'FOLLOW UP': 'Follow Up',
+  'FOLLOW UP EXTENDED': 'Follow Up',
+  'MEDICAL FOLLOW UP': 'Follow Up',
+  'DISCHARGE FOLLOW UP': 'Follow Up',
+  'LEQVIO VISIT': 'Leqvio',
+  'RESEARCH': 'Research',
+  'VIDEO VISIT - FOLLOW UP': 'Video Visit',
+  'VIDEO VISIT - NEW PATIENT': 'Video Visit',
+  'TELEPHONE VISIT POST OP': 'Video Visit',
+  'TELEPHONE VISIT-ESTABLISHED PATIENT': 'Video Visit',
+  'TELEHEALTH COVID-19 FOLLOW UP': 'Video Visit',
+  'MYCHART ONDEMAND VISIT 1': 'Video Visit',
+  'ANNUAL WELL VISIT ESTABLISHED': 'Annual Well Visit',
+  'DEVICE CHECK': 'Ancillary',
+  'EKG': 'Ancillary',
+  'BLOOD DRAW': 'Ancillary',
+  'EVENT MONITOR': 'Ancillary',
+  // Excluded types
+  'LAB ONLY': 'Excluded',
+  'ES MS MYC OPEN': 'Excluded',
+  'ECHOCARDIOGRAM LIMITED': 'Excluded',
+  'NONE OF THE ABOVE': 'Excluded',
+  'TTVR': 'Excluded',
+};
+
+function categorizeStatVisitType(visitType: string): string {
+  const upper = visitType.toUpperCase().trim();
+  return STAT_VISIT_TYPE_MAP[upper] || 'Other';
+}
+
+// ── Department Normalization (Testing Visits) ──
+
+const STAT_DEPARTMENT_MAP: Record<string, string> = {
+  '1000 10TH AVE CVI CARDIOLOGY ECHO': 'CVI Echo',
+  '1000 10TH ECHO': 'Echo Lab (4th Floor)',
+  '1000 10TH AVE CVI CARDIOLOGY VASCULAR': 'Vascular',
+  '1000 10TH AVE CVI CARDIOLOGY NUCLEAR': 'Nuclear',
+  '1000 10TH AVE EP': 'EP',
+  'MSW 1000 10TH AVE CARDIOLOGY CT': 'CT',
+  '1000 10TH AVE CVI CARDIO VEIN': 'Cardio Vein',
+  'NONE OF THE ABOVE': 'Other',
+};
+
+function normalizeStatDepartment(department: string): string {
+  // Try exact match first, then uppercase match
+  if (STAT_DEPARTMENT_MAP[department]) return STAT_DEPARTMENT_MAP[department];
+  const upper = department.toUpperCase().trim();
+  if (STAT_DEPARTMENT_MAP[upper]) return STAT_DEPARTMENT_MAP[upper];
+  return department;
+}
+
+// ── Order Categorization ──
+
+const STAT_ORDER_CATEGORY_MAP: [string, string][] = [
+  // Echo
+  ['TRANSTHORACIC ECHOCARDIOGRAM', 'Echo'],
+  ['ECHOCARDIOGRAM LIMITED', 'Echo'],
+  ['ECHOCARDIOGRAPHY, TRANSTHORACIC', 'Echo'],
+  ['ECHO FETAL', 'Echo'],
+  // Stress Echo
+  ['ECHOCARDIOGRAM STRESS TEST', 'Stress Echo'],
+  ['DOBUTAMINE STRESS ECHO', 'Stress Echo'],
+  ['TRANSTHORACIC STRESS ECHOCARDIOGRAM', 'Stress Echo'],
+  // Nuclear
+  ['MYOCARDIAL PERFUSION STRESS TEST', 'Nuclear'],
+  ['NM PET HEART STRESS', 'Nuclear'],
+  ['TC-99M PYP AMYLOID SCAN', 'Nuclear'],
+  // Vascular
+  ['US DOPPLER', 'Vascular'],
+  ['US DUPLEX CAROTID', 'Vascular'],
+  ['LOWER EXTREMITY ARTERIAL PVR', 'Vascular'],
+  // CT/CTA
+  ['CT HEART CORONARY', 'CT/CTA'],
+  ['CTA HEART CORONARY', 'CT/CTA'],
+  ['CTA CHEST', 'CT/CTA'],
+  ['CT CHEST', 'CT/CTA'],
+  ['CTA NECK', 'CT/CTA'],
+  ['CT CORONARY CALCIUM', 'CT/CTA'],
+  // EP
+  ['EP STUDY/ABLATION', 'EP'],
+  ['IMPLANTABLE LOOP', 'EP'],
+  ['CARDIOVERSION', 'EP'],
+  ['INTERROGATION DEVICE', 'EP'],
+  ['REPROGRAMMING OF LOOP', 'EP'],
+  ['CARDIAC CATH', 'EP'],
+  ['CARD ICD INT', 'EP'],
+  ['CARDIO PM INT', 'EP'],
+  ['IMPLANTED CARDIAC DEVICE', 'EP'],
+  // Monitoring
+  ['LONG-TERM MONITOR LTM', 'Monitoring'],
+  ['MOBILE TELEMETRY MCT', 'Monitoring'],
+  ['ECG MONITOR/REVIEW', 'Monitoring'],
+  // EKG
+  ['ELECTROCARDIOGRAM', 'EKG'],
+  ['ECG RECORD/REVIEW', 'EKG'],
+  // Stress Test (non-echo)
+  ['EXERCISE STRESS TEST', 'Stress Test'],
+  ['CARDIOPULMONARY STRESS', 'Stress Test'],
+  // TEE
+  ['TRANSESOPHAGEAL ECHOCARDIOGRAM', 'TEE'],
+  // MRI
+  ['MRI HEART', 'Cardiac MRI'],
+  // Program Eval
+  ['PROGRAM EVALUATION', 'Device Management'],
+];
+
+function categorizeStatOrder(orderDescription: string): string {
+  const upper = orderDescription.toUpperCase().trim();
+  for (const [pattern, category] of STAT_ORDER_CATEGORY_MAP) {
+    if (upper.includes(pattern)) {
+      return category;
+    }
+  }
+  return 'Other';
+}
+
+// ── Excel Date Helper (for xlsx-populate cells) ──
+
+function xlsxPopulateDateToString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  if (typeof value === 'number') {
+    return excelSerialToDate(value);
+  }
+  const s = String(value).trim();
+  if (!s) return null;
+  // Try M/D/YYYY
+  const parts = s.split('/');
+  if (parts.length === 3) {
+    const month = parts[0].padStart(2, '0');
+    const day = parts[1].padStart(2, '0');
+    const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+    return `${year}-${month}-${day}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return null;
+}
+
+function cellStr(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+// ── Shared helpers for encrypted parsers ──
+
+function parseTimeValue(raw: unknown): string {
+  if (raw instanceof Date) {
+    return raw.toTimeString().substring(0, 8);
+  } else if (typeof raw === 'number') {
+    const totalMinutes = Math.round(raw * 24 * 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`;
+  }
+  return cellStr(raw);
+}
+
+function detectReportMonth(monthCounts: Record<string, number>): string {
+  let reportMonth = '';
+  let maxCount = 0;
+  for (const [month, count] of Object.entries(monthCounts)) {
+    if (count > maxCount) { maxCount = count; reportMonth = month; }
+  }
+  return reportMonth;
+}
+
+// ── Report 1: Office Completed (Billing) ──
+// 9 metadata rows, row 10 = headers, data from row 11
+// 9 cols: Start Date, End Date, Primary Provider, Visit Type,
+//         Visit Date, Appointment Time, Patient Name, Patient MRN, Primary Payer
+// NO Appointment Status or Late Cancel (all rows are completed)
+
+export async function parseStatOfficeCompleted(
+  buffer: Buffer,
+  password: string = '1'
+): Promise<StatParseResult<StatOfficeVisitRecord>> {
+  const workbook = await XlsxPopulate.fromDataAsync(buffer, { password });
+  const sheet = workbook.sheet(0);
+  const usedRange = sheet.usedRange();
+  if (!usedRange) throw new Error('Office completed file appears empty');
+
+  const endRow = usedRange.endCell().rowNumber();
+  const records: StatOfficeVisitRecord[] = [];
+  const monthCounts: Record<string, number> = {};
+
+  for (let r = 11; r <= endRow; r++) {
+    const visitDate = xlsxPopulateDateToString(sheet.cell(r, 5).value());
+    if (!visitDate) continue;
+    const providerName = cellStr(sheet.cell(r, 3).value());
+    if (!providerName) continue;
+    const visitTypeRaw = cellStr(sheet.cell(r, 4).value());
+
+    records.push({
+      startDate: xlsxPopulateDateToString(sheet.cell(r, 1).value()),
+      endDate: xlsxPopulateDateToString(sheet.cell(r, 2).value()),
+      visitDate,
+      appointmentTime: parseTimeValue(sheet.cell(r, 6).value()),
+      patientName: cellStr(sheet.cell(r, 7).value()),
+      mrn: cellStr(sheet.cell(r, 8).value()),
+      appointmentStatus: '',  // not present in completed report
+      lateCancel: 0,
+      primaryProviderName: providerName,
+      visitTypeRaw,
+      visitTypeCategory: categorizeStatVisitType(visitTypeRaw),
+      primaryPayer: cellStr(sheet.cell(r, 9).value()),  // col I (9th col)
+    });
+
+    const month = visitDate.substring(0, 7) + '-01';
+    monthCounts[month] = (monthCounts[month] || 0) + 1;
+  }
+
+  return { records, reportMonth: detectReportMonth(monthCounts), rowCount: records.length };
+}
+
+// ── Report 2: Office All Statuses ──
+// 9 metadata rows, row 10 = headers, data from row 11
+// 11 cols: Start Date, End Date, Primary Provider, Visit Type,
+//          Visit Date, Appointment Time, Patient Name, Patient MRN,
+//          Late Cancel?, Appointment Status, Primary Payer
+
+export async function parseStatOfficeAllStatuses(
+  buffer: Buffer,
+  password: string = '1'
+): Promise<StatParseResult<StatOfficeVisitRecord>> {
+  const workbook = await XlsxPopulate.fromDataAsync(buffer, { password });
+  const sheet = workbook.sheet(0);
+  const usedRange = sheet.usedRange();
+  if (!usedRange) throw new Error('Office all-statuses file appears empty');
+
+  const endRow = usedRange.endCell().rowNumber();
+  const records: StatOfficeVisitRecord[] = [];
+  const monthCounts: Record<string, number> = {};
+
+  for (let r = 11; r <= endRow; r++) {
+    const visitDate = xlsxPopulateDateToString(sheet.cell(r, 5).value());
+    if (!visitDate) continue;
+    const providerName = cellStr(sheet.cell(r, 3).value());
+    if (!providerName) continue;
+    const visitTypeRaw = cellStr(sheet.cell(r, 4).value());
+
+    const lateCancelRaw = sheet.cell(r, 9).value();  // col I
+    const lateCancel = (lateCancelRaw === 1 || lateCancelRaw === '1') ? 1 : 0;
+
+    records.push({
+      startDate: xlsxPopulateDateToString(sheet.cell(r, 1).value()),
+      endDate: xlsxPopulateDateToString(sheet.cell(r, 2).value()),
+      visitDate,
+      appointmentTime: parseTimeValue(sheet.cell(r, 6).value()),
+      patientName: cellStr(sheet.cell(r, 7).value()),
+      mrn: cellStr(sheet.cell(r, 8).value()),
+      appointmentStatus: cellStr(sheet.cell(r, 10).value()),  // col J
+      lateCancel,
+      primaryProviderName: providerName,
+      visitTypeRaw,
+      visitTypeCategory: categorizeStatVisitType(visitTypeRaw),
+      primaryPayer: cellStr(sheet.cell(r, 11).value()),  // col K
+    });
+
+    const month = visitDate.substring(0, 7) + '-01';
+    monthCounts[month] = (monthCounts[month] || 0) + 1;
+  }
+
+  return { records, reportMonth: detectReportMonth(monthCounts), rowCount: records.length };
+}
+
+// ── Report 3: Testing Completed (Billing) ──
+// 9 metadata rows, row 10 = headers, data from row 11
+// 10 cols: Start Date, End Date, Department, Visit Type,
+//          Visit Date, Appointment Time, Patient Name,
+//          Appointment Primary Resource, Patient MRN, Primary Payer
+
+export async function parseStatTestingCompleted(
+  buffer: Buffer,
+  password: string = '1'
+): Promise<StatParseResult<StatTestingVisitRecord>> {
+  const workbook = await XlsxPopulate.fromDataAsync(buffer, { password });
+  const sheet = workbook.sheet(0);
+  const usedRange = sheet.usedRange();
+  if (!usedRange) throw new Error('Testing completed file appears empty');
+
+  const endRow = usedRange.endCell().rowNumber();
+  const records: StatTestingVisitRecord[] = [];
+  const monthCounts: Record<string, number> = {};
+
+  for (let r = 11; r <= endRow; r++) {
+    const visitDate = xlsxPopulateDateToString(sheet.cell(r, 5).value());
+    if (!visitDate) continue;
+    const department = cellStr(sheet.cell(r, 3).value());
+    if (!department) continue;
+
+    records.push({
+      startDate: xlsxPopulateDateToString(sheet.cell(r, 1).value()),
+      endDate: xlsxPopulateDateToString(sheet.cell(r, 2).value()),
+      visitDate,
+      appointmentTime: parseTimeValue(sheet.cell(r, 6).value()),
+      patientName: cellStr(sheet.cell(r, 7).value()),
+      mrn: cellStr(sheet.cell(r, 9).value()),          // col I
+      appointmentStatus: '',  // not present in completed
+      lateCancel: 0,
+      department,
+      departmentNormalized: normalizeStatDepartment(department),
+      visitType: cellStr(sheet.cell(r, 4).value()),
+      resource: cellStr(sheet.cell(r, 8).value()),     // col H
+      primaryPayer: cellStr(sheet.cell(r, 10).value()), // col J
+    });
+
+    const month = visitDate.substring(0, 7) + '-01';
+    monthCounts[month] = (monthCounts[month] || 0) + 1;
+  }
+
+  return { records, reportMonth: detectReportMonth(monthCounts), rowCount: records.length };
+}
+
+// ── Report 4: Testing All Statuses ──
+// 9 metadata rows, row 10 = headers, data from row 11
+// 12 cols: Start Date, End Date, Department, Visit Type,
+//          Visit Date, Appointment Time, Patient Name, Patient MRN,
+//          Appointment Status, Primary Payer, Late Cancel?, Appointment Primary Resource
+
+export async function parseStatTestingAllStatuses(
+  buffer: Buffer,
+  password: string = '1'
+): Promise<StatParseResult<StatTestingVisitRecord>> {
+  const workbook = await XlsxPopulate.fromDataAsync(buffer, { password });
+  const sheet = workbook.sheet(0);
+  const usedRange = sheet.usedRange();
+  if (!usedRange) throw new Error('Testing all-statuses file appears empty');
+
+  const endRow = usedRange.endCell().rowNumber();
+  const records: StatTestingVisitRecord[] = [];
+  const monthCounts: Record<string, number> = {};
+
+  for (let r = 11; r <= endRow; r++) {
+    const visitDate = xlsxPopulateDateToString(sheet.cell(r, 5).value());
+    if (!visitDate) continue;
+    const department = cellStr(sheet.cell(r, 3).value());
+    if (!department) continue;
+
+    const lateCancelRaw = sheet.cell(r, 11).value();  // col K
+    const lateCancel = (lateCancelRaw === 1 || lateCancelRaw === '1') ? 1 : 0;
+
+    records.push({
+      startDate: xlsxPopulateDateToString(sheet.cell(r, 1).value()),
+      endDate: xlsxPopulateDateToString(sheet.cell(r, 2).value()),
+      visitDate,
+      appointmentTime: parseTimeValue(sheet.cell(r, 6).value()),
+      patientName: cellStr(sheet.cell(r, 7).value()),
+      mrn: cellStr(sheet.cell(r, 8).value()),           // col H
+      appointmentStatus: cellStr(sheet.cell(r, 9).value()), // col I
+      lateCancel,
+      department,
+      departmentNormalized: normalizeStatDepartment(department),
+      visitType: cellStr(sheet.cell(r, 4).value()),
+      resource: cellStr(sheet.cell(r, 12).value()),     // col L
+      primaryPayer: cellStr(sheet.cell(r, 10).value()), // col J
+    });
+
+    const month = visitDate.substring(0, 7) + '-01';
+    monthCounts[month] = (monthCounts[month] || 0) + 1;
+  }
+
+  return { records, reportMonth: detectReportMonth(monthCounts), rowCount: records.length };
+}
+
+// ── Report 5: Orders (Not Encrypted, unchanged) ──
+
+export function parseStatOrders(
+  buffer: ArrayBuffer
+): StatParseResult<StatOrderRecord> {
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+
+  const rawData: unknown[][] = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    defval: null,
+    raw: true,
+  });
+
+  if (rawData.length < 2) {
+    throw new Error('Orders report appears empty');
+  }
+
+  const dataRows = rawData.slice(1).filter(row =>
+    row && row.length > 0 && row[0] !== null
+  );
+
+  const records: StatOrderRecord[] = [];
+  const monthCounts: Record<string, number> = {};
+
+  for (const row of dataRows) {
+    const orderId = str(row[7]);
+    if (!orderId) continue;
+
+    const visitDate = parseDate(row[2]);
+    const orderDescription = strRequired(row[8]);
+
+    records.push({
+      visitDate,
+      mrn: strRequired(row[3]),
+      patientName: strRequired(row[4]),
+      providerResourceName: strRequired(row[0]),
+      orderingProviderName: strRequired(row[10]),
+      referringProviderName: strRequired(row[11]),
+      orderId,
+      orderDescription,
+      orderCategory: categorizeStatOrder(orderDescription),
+      orderDate: parseDate(row[9]),
+      orderStatus: strRequired(row[12]),
+      apptStatus: strRequired(row[6]),
+      department: strRequired(row[1]),
+      coverage: strRequired(row[5]),
+    });
+
+    if (visitDate) {
+      const month = visitDate.substring(0, 7) + '-01';
+      monthCounts[month] = (monthCounts[month] || 0) + 1;
+    }
+  }
+
+  return { records, reportMonth: detectReportMonth(monthCounts), rowCount: records.length };
+}
+
+// Keep old function names as aliases for backward compatibility during transition
+export const parseStatOfficeVisits = parseStatOfficeAllStatuses;
+export const parseStatTestingVisits = parseStatTestingAllStatuses;
