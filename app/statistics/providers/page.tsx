@@ -55,68 +55,73 @@ export default function ProvidersPage() {
   };
 
   return (
-    <div className="min-h-screen p-6" style={{ backgroundColor: colors.lightGray }}>
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <Link
-            href="/dashboard"
-            className="text-sm hover:underline mb-2 inline-block"
-            style={{ color: colors.primaryBlue }}
-          >
-            &larr; Back to Dashboard
-          </Link>
-          <h1 className="text-2xl font-bold" style={{ color: colors.primaryBlue }}>
-            Provider Scorecard
-          </h1>
-          <StatisticsNav />
+    <div className="min-h-screen" style={{ backgroundColor: colors.lightGray }}>
+      {/* Sticky Header + Filters */}
+      <div className="sticky top-0 z-20 px-6 pt-6 pb-0" style={{ backgroundColor: colors.lightGray }}>
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-3">
+            <Link
+              href="/dashboard"
+              className="text-sm hover:underline mb-2 inline-block"
+              style={{ color: colors.primaryBlue }}
+            >
+              &larr; Back to Dashboard
+            </Link>
+            <h1 className="text-2xl font-bold" style={{ color: colors.primaryBlue }}>
+              Provider Scorecard
+            </h1>
+            <StatisticsNav />
+          </div>
+
+          {/* Filters */}
+          <div className="bg-white rounded-xl shadow-sm px-5 py-3 mb-4 flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-600">Provider:</label>
+              <select
+                value={selectedProvider}
+                onChange={(e) => setSelectedProvider(e.target.value)}
+                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">All Providers</option>
+                {providers.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-600">Month:</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {availableMonths.length === 0 && (
+                  <option value="">No data uploaded</option>
+                )}
+                {availableMonths.map(m => (
+                  <option key={m} value={m}>{formatMonth(m)}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-600">Compare:</label>
+              <select
+                value={comparisonMode}
+                onChange={(e) => setComparisonMode(e.target.value as ComparisonMode)}
+                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="vs_prior_month">vs Previous Month</option>
+                <option value="vs_same_year_ago">vs Same Month Last Year</option>
+                <option value="vs_ytd_prior_year">YTD vs Prior YTD</option>
+              </select>
+            </div>
+          </div>
         </div>
+      </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-xl shadow-sm px-5 py-3 mb-6 flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-600">Provider:</label>
-            <select
-              value={selectedProvider}
-              onChange={(e) => setSelectedProvider(e.target.value)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="all">All Providers</option>
-              {providers.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-600">Month:</label>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              {availableMonths.length === 0 && (
-                <option value="">No data uploaded</option>
-              )}
-              {availableMonths.map(m => (
-                <option key={m} value={m}>{formatMonth(m)}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-600">Compare:</label>
-            <select
-              value={comparisonMode}
-              onChange={(e) => setComparisonMode(e.target.value as ComparisonMode)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="vs_prior_month">vs Previous Month</option>
-              <option value="vs_same_year_ago">vs Same Month Last Year</option>
-              <option value="vs_ytd_prior_year">YTD vs Prior YTD</option>
-            </select>
-          </div>
-        </div>
+      <div className="max-w-7xl mx-auto px-6">
 
         {/* No data state */}
         {!loading && availableMonths.length === 0 && (
