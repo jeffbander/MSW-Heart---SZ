@@ -135,6 +135,13 @@ export default function StatisticsPage() {
                 Provider Scorecard
               </Link>
               <Link
+                href="/statistics/testing"
+                className="text-sm px-3 py-1.5 rounded-lg text-white font-medium"
+                style={{ backgroundColor: colors.teal }}
+              >
+                Testing Analytics
+              </Link>
+              <Link
                 href="/data"
                 className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100"
               >
