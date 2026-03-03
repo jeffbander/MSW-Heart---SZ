@@ -89,6 +89,19 @@ function formatChange(current: number, comparison: number): { text: string; colo
   };
 }
 
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 export default function ProviderScorecard({ providerId, providerName, reportMonth, comparisonMode }: Props) {
   const [data, setData] = useState<ProviderData | null>(null);
   const [orders, setOrders] = useState<OrdersData | null>(null);
@@ -121,8 +134,26 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
-        Loading provider scorecard...
+      <div className="space-y-6">
+        <div className="bg-white rounded-xl shadow-md p-5 flex items-center gap-4">
+          <div className="animate-pulse flex items-center gap-4 w-full">
+            <div className="w-12 h-12 rounded-full bg-gray-200"></div>
+            <div className="space-y-2">
+              <div className="h-5 bg-gray-200 rounded w-48"></div>
+              <div className="h-3 bg-gray-200 rounded w-32"></div>
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white rounded-xl shadow-sm p-5 min-h-[120px]">
+              <div className="animate-pulse">
+                <div className="h-3 bg-gray-200 rounded w-20 mb-3"></div>
+                <div className="h-7 bg-gray-200 rounded w-14"></div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -146,6 +177,7 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
   };
 
   const totalSeen = VISIT_CATEGORIES.reduce((sum, cat) => sum + (current.visitBreakdown[cat]?.seen || 0), 0);
+  const initials = providerName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
   const toggleOrderExpand = (cat: string) => {
     setExpandedOrders(prev => {
@@ -157,17 +189,25 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
   };
 
   return (
-    <div className="space-y-6">
-      {/* Provider Name + Period */}
-      <div>
-        <h2 className="text-lg font-semibold" style={{ color: colors.primaryBlue }}>
-          {providerName}
-        </h2>
-        <p className="text-sm text-gray-500">
-          {data.comparisonLabel || (comparisonMode === 'vs_ytd_prior_year'
-            ? `YTD through ${formatMonth(reportMonth)}`
-            : formatMonth(reportMonth))}
-        </p>
+    <div className="space-y-8">
+      {/* Provider Header Card */}
+      <div className="bg-white rounded-xl shadow-md p-5 flex items-center gap-4">
+        <div
+          className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg"
+          style={{ backgroundColor: colors.primaryBlue }}
+        >
+          {initials}
+        </div>
+        <div>
+          <h2 className="text-xl font-bold" style={{ color: colors.primaryBlue }}>
+            {providerName}
+          </h2>
+          <p className="text-sm text-gray-500">
+            {data.comparisonLabel || (comparisonMode === 'vs_ytd_prior_year'
+              ? `YTD through ${formatMonth(reportMonth)}`
+              : formatMonth(reportMonth))}
+          </p>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -176,41 +216,52 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
           title="Patients Seen"
           value={current.patientsSeenExclAncillary}
           comparison={hasComparison ? current.patientsSeenExclAncillary - comparison.patientsSeenExclAncillary : null}
+          accentColor="#003D7A"
         />
         <KPICard
           title="New Patient %"
           value={`${current.newPatientPct}%`}
           comparison={hasComparison ? current.newPatientPct - comparison.newPatientPct : null}
           isPercentage
+          accentColor="#0078C8"
         />
         <KPICard
           title="No Show Rate"
           value={`${current.noShowRate}%`}
           comparison={hasComparison ? comparison.noShowRate - current.noShowRate : null}
           isPercentage
+          accentColor="#DC2626"
         />
         <KPICard
           title="Late Cancel Rate"
           value={`${current.lateCancelRate}%`}
           comparison={hasComparison ? comparison.lateCancelRate - current.lateCancelRate : null}
           isPercentage
+          accentColor="#D97706"
         />
         <KPICard
           title="Sessions"
           value={current.sessionsCount}
           comparison={hasComparison ? current.sessionsCount - comparison.sessionsCount : null}
+          accentColor="#00A3AD"
         />
         <KPICard
           title="Pts / Session"
           value={current.avgPatientsPerSession}
           comparison={hasComparison ? Number((current.avgPatientsPerSession - comparison.avgPatientsPerSession).toFixed(1)) : null}
+          accentColor="#059669"
         />
       </div>
 
       {/* Visit Breakdown */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
         <div className="px-5 py-4 border-b">
-          <h3 className="text-base font-semibold" style={{ color: colors.primaryBlue }}>Office Visit Breakdown</h3>
+          <h3
+            className="text-base font-semibold pl-4"
+            style={{ color: colors.primaryBlue, borderLeft: '4px solid #003D7A' }}
+          >
+            Office Visit Breakdown
+          </h3>
         </div>
         <table className="w-full">
           <thead>
@@ -227,7 +278,7 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {VISIT_CATEGORIES.map(cat => {
+            {VISIT_CATEGORIES.map((cat, catIdx) => {
               const cur = current.visitBreakdown[cat] || { total: 0, seen: 0 };
               const comp = comparison?.visitBreakdown[cat] || { total: 0, seen: 0 };
               const isAncillary = cat === 'Ancillary';
@@ -238,14 +289,16 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
                     <table className="w-full">
                       <tbody>
                         <tr
-                          className={isAncillary ? 'bg-blue-50 cursor-pointer hover:bg-blue-100' : 'hover:bg-gray-50'}
+                          className={`transition-colors duration-150 ${
+                            isAncillary
+                              ? 'bg-blue-50 cursor-pointer hover:bg-blue-100'
+                              : `hover:bg-gray-50 ${catIdx % 2 === 1 ? 'bg-gray-50/50' : ''}`
+                          }`}
                           onClick={isAncillary ? () => setAncillaryExpanded(!ancillaryExpanded) : undefined}
                         >
                           <td className="px-5 py-3 text-sm font-medium text-gray-900 w-[30%]">
                             <span className="flex items-center gap-2">
-                              {isAncillary && (
-                                <span className="text-xs text-gray-400">{ancillaryExpanded ? '▼' : '▶'}</span>
-                              )}
+                              {isAncillary && <ChevronIcon expanded={ancillaryExpanded} />}
                               {cat}
                             </span>
                           </td>
@@ -273,7 +326,7 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
                               const subCur = current.ancillarySubcategories[sub] || { total: 0, seen: 0 };
                               const subComp = comparison?.ancillarySubcategories[sub] || { total: 0, seen: 0 };
                               return (
-                                <tr key={sub} className="bg-blue-50/50">
+                                <tr key={sub} className="bg-blue-50/50 border-l-2 border-[#003D7A]/20">
                                   <td className="pl-12 pr-5 py-2 text-sm text-gray-600 w-[30%]">{sub}</td>
                                   <td className="px-5 py-2 text-sm text-gray-600 text-right w-[20%]">
                                     {subCur.seen.toLocaleString()}
@@ -308,9 +361,14 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
 
       {/* Orders by Category */}
       {orders && orders.categories && orders.categories.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <div className="px-5 py-4 border-b">
-            <h3 className="text-base font-semibold" style={{ color: colors.primaryBlue }}>Orders by Category</h3>
+            <h3
+              className="text-base font-semibold pl-4"
+              style={{ color: colors.primaryBlue, borderLeft: '4px solid #0078C8' }}
+            >
+              Orders by Category
+            </h3>
           </div>
           <table className="w-full">
             <thead>
@@ -326,7 +384,7 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {orders.categories.map(cat => {
+              {orders.categories.map((cat, catIdx) => {
                 const compCat = orders.comparisonCategories?.find(c => c.category === cat.category);
                 const isExpanded = expandedOrders.has(cat.category);
                 return (
@@ -335,12 +393,12 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
                       <table className="w-full">
                         <tbody>
                           <tr
-                            className="cursor-pointer hover:bg-gray-50"
+                            className={`cursor-pointer hover:bg-gray-50 transition-colors duration-150 ${catIdx % 2 === 1 ? 'bg-gray-50/50' : ''}`}
                             onClick={() => toggleOrderExpand(cat.category)}
                           >
                             <td className="px-5 py-3 text-sm font-medium text-gray-900 w-[40%]">
                               <span className="flex items-center gap-2">
-                                <span className="text-xs text-gray-400">{isExpanded ? '▼' : '▶'}</span>
+                                <ChevronIcon expanded={isExpanded} />
                                 {cat.category}
                               </span>
                             </td>
@@ -360,8 +418,8 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
                           </tr>
 
                           {isExpanded && cat.orders.map(order => (
-                            <tr key={order.description} className="bg-gray-50/50">
-                              <td className="pl-12 pr-5 py-2 text-sm text-gray-600 w-[40%]">{order.description}</td>
+                            <tr key={order.description} className="bg-gray-50/50 border-l-2 border-[#0078C8]/20">
+                              <td className="pl-14 pr-5 py-2 text-sm text-gray-600 w-[40%]">{order.description}</td>
                               <td className="px-5 py-2 text-sm text-gray-500 text-right w-[20%]">{order.count.toLocaleString()}</td>
                               {orders.comparisonCategories && (
                                 <>
@@ -384,9 +442,14 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
 
       {/* Referrals on Completed Studies */}
       {referrals && referrals.departments && referrals.departments.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl shadow-md overflow-hidden">
           <div className="px-5 py-4 border-b">
-            <h3 className="text-base font-semibold" style={{ color: colors.primaryBlue }}>Referrals on Completed Studies</h3>
+            <h3
+              className="text-base font-semibold pl-4"
+              style={{ color: colors.primaryBlue, borderLeft: '4px solid #7C3AED' }}
+            >
+              Referrals on Completed Studies
+            </h3>
           </div>
           <table className="w-full">
             <thead>
@@ -401,10 +464,10 @@ export default function ProviderScorecard({ providerId, providerName, reportMont
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {referrals.departments.map(dept => {
+              {referrals.departments.map((dept, idx) => {
                 const compDept = referrals.comparisonDepartments?.find(d => d.department === dept.department);
                 return (
-                  <tr key={dept.department} className="hover:bg-gray-50">
+                  <tr key={dept.department} className={`hover:bg-gray-50 transition-colors duration-150 ${idx % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
                     <td className="px-5 py-3 text-sm font-medium text-gray-900">{dept.department}</td>
                     <td className="px-5 py-3 text-sm text-gray-700 text-right">{dept.providerReferrals.toLocaleString()}</td>
                     <td className="px-5 py-3 text-sm text-gray-500 text-right">{dept.totalStudies.toLocaleString()}</td>

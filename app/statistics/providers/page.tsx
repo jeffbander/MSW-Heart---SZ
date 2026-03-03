@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ProviderScorecard from '@/app/components/statistics/ProviderScorecard';
 import ProviderComparisonTable from '@/app/components/statistics/ProviderComparisonTable';
+import StatisticsNav from '@/app/components/statistics/StatisticsNav';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -59,15 +60,16 @@ export default function ProvidersPage() {
         {/* Header */}
         <div className="mb-6">
           <Link
-            href="/statistics"
+            href="/dashboard"
             className="text-sm hover:underline mb-2 inline-block"
             style={{ color: colors.primaryBlue }}
           >
-            &larr; Back to Practice Overview
+            &larr; Back to Dashboard
           </Link>
           <h1 className="text-2xl font-bold" style={{ color: colors.primaryBlue }}>
             Provider Scorecard
           </h1>
+          <StatisticsNav />
         </div>
 
         {/* Filters */}
@@ -118,7 +120,10 @@ export default function ProvidersPage() {
 
         {/* No data state */}
         {!loading && availableMonths.length === 0 && (
-          <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+          <div className="bg-white rounded-xl shadow-md p-12 text-center">
+            <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
             <p className="text-gray-500 mb-4">No statistics data uploaded yet.</p>
             <Link
               href="/data"
@@ -132,8 +137,15 @@ export default function ProvidersPage() {
 
         {/* Loading */}
         {loading && (
-          <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
-            Loading...
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl shadow-md p-6">
+              <div className="animate-pulse space-y-3">
+                <div className="h-4 bg-gray-200 rounded w-48"></div>
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="h-3 bg-gray-200 rounded w-full"></div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 

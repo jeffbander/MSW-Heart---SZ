@@ -28,13 +28,12 @@ function formatChange(current: number, comparison: number): { text: string; colo
 }
 
 export default function TestingVolumeSummary({ current, comparison }: TestingVolumeSummaryProps) {
-  // Show ordered departments first, then any extras; exclude 'Other'
   const allDepts = new Set([...DEPT_ORDER, ...Object.keys(current)]);
   const departments = Array.from(allDepts).filter(d => current[d] && d !== 'Other');
 
   if (departments.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-6 text-center text-gray-400 text-sm">
+      <div className="bg-white rounded-xl shadow-md p-6 text-center text-gray-400 text-sm">
         No testing data available for this period.
       </div>
     );
@@ -46,9 +45,14 @@ export default function TestingVolumeSummary({ current, comparison }: TestingVol
   }, 0);
 
   return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl shadow-md overflow-hidden">
       <div className="px-5 py-4 border-b">
-        <h3 className="text-base font-semibold" style={{ color: '#003D7A' }}>Testing Volume by Department</h3>
+        <h3
+          className="text-base font-semibold pl-4"
+          style={{ color: '#003D7A', borderLeft: '4px solid #00A3AD' }}
+        >
+          Testing Volume by Department
+        </h3>
       </div>
       <table className="w-full">
         <thead>
@@ -65,7 +69,7 @@ export default function TestingVolumeSummary({ current, comparison }: TestingVol
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {departments.map((dept) => {
+          {departments.map((dept, idx) => {
             const stats = current[dept];
             const seen = stats.completed + stats.arrived;
             const compStats = comparison?.[dept];
@@ -73,7 +77,7 @@ export default function TestingVolumeSummary({ current, comparison }: TestingVol
             const change = compStats ? formatChange(seen, compSeen) : null;
 
             return (
-              <tr key={dept} className="hover:bg-gray-50">
+              <tr key={dept} className={`hover:bg-gray-50 transition-colors duration-150 ${idx % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
                 <td className="px-5 py-3 text-sm font-medium text-gray-900">{dept}</td>
                 <td className="px-5 py-3 text-sm text-gray-700 text-right">{seen.toLocaleString()}</td>
                 <td className="px-5 py-3 text-sm text-gray-400 text-right">

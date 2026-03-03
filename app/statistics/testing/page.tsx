@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import StatisticsNav from '@/app/components/statistics/StatisticsNav';
 
 const colors = {
   primaryBlue: '#003D7A',
@@ -82,6 +83,19 @@ function formatChange(current: number, comparison: number): { text: string; colo
 
 const DEPT_DISPLAY_ORDER = ['CVI Echo', 'Echo Lab (4th Floor)', 'Vascular', 'Nuclear', 'EP', 'CT', 'Cardio Vein'];
 
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 export default function TestingAnalyticsPage() {
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState('');
@@ -94,6 +108,17 @@ export default function TestingAnalyticsPage() {
   const [expandedDeptVisitTypes, setExpandedDeptVisitTypes] = useState<Set<string>>(new Set());
   const [expandedOrdersOutside, setExpandedOrdersOutside] = useState<Set<string>>(new Set());
   const [expandedReferralsOutside, setExpandedReferralsOutside] = useState<Set<string>>(new Set());
+
+  // Collapsible section state
+  const [sectionsExpanded, setSectionsExpanded] = useState({
+    volume: true,
+    orders: false,
+    referrals: false,
+  });
+
+  const toggleSection = (section: 'volume' | 'orders' | 'referrals') => {
+    setSectionsExpanded(prev => ({ ...prev, [section]: !prev[section] }));
+  };
 
   useEffect(() => {
     fetch('/api/statistics/months')
@@ -186,15 +211,16 @@ export default function TestingAnalyticsPage() {
         {/* Header */}
         <div className="mb-6">
           <Link
-            href="/statistics"
+            href="/dashboard"
             className="text-sm hover:underline mb-2 inline-block"
             style={{ color: colors.primaryBlue }}
           >
-            &larr; Back to Practice Overview
+            &larr; Back to Dashboard
           </Link>
           <h1 className="text-2xl font-bold" style={{ color: colors.primaryBlue }}>
             Testing Analytics
           </h1>
+          <StatisticsNav />
         </div>
 
         {/* Filters */}
@@ -233,7 +259,10 @@ export default function TestingAnalyticsPage() {
 
         {/* No data */}
         {!loading && availableMonths.length === 0 && (
-          <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+          <div className="bg-white rounded-xl shadow-md p-12 text-center">
+            <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
             <p className="text-gray-500 mb-4">No statistics data uploaded yet.</p>
             <Link
               href="/data"
@@ -246,8 +275,15 @@ export default function TestingAnalyticsPage() {
         )}
 
         {loading && (
-          <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
-            Loading testing analytics...
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl shadow-md p-6">
+              <div className="animate-pulse space-y-3">
+                <div className="h-4 bg-gray-200 rounded w-48"></div>
+                {[...Array(7)].map((_, i) => (
+                  <div key={i} className="h-3 bg-gray-200 rounded w-full"></div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -260,7 +296,7 @@ export default function TestingAnalyticsPage() {
         {overview && !loading && (
           <div className="space-y-6">
             {/* Period heading */}
-            <h2 className="text-lg font-semibold" style={{ color: colors.primaryBlue }}>
+            <h2 className="text-base font-medium text-gray-600">
               {overview.comparisonLabel
                 ? overview.comparisonLabel
                 : comparisonMode === 'vs_ytd_prior_year'
@@ -268,273 +304,355 @@ export default function TestingAnalyticsPage() {
                   : formatMonth(selectedMonth)}
             </h2>
 
-            {/* Department KPIs Overview Table */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b">
-                <h3 className="text-base font-semibold" style={{ color: colors.primaryBlue }}>Testing Volume by Department</h3>
-              </div>
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th>
-                    <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Completed</th>
-                    <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">% of Total</th>
-                    <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">No Show %</th>
-                    <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Late Cancel %</th>
-                    {hasComparison && (
-                      <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Change</th>
+            {/* Department Summary KPI Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+              {sortedDepts.map(dept => {
+                const stats = overview.departments[dept];
+                const compStats = overview.comparison?.[dept];
+                const change = compStats ? formatChange(stats.completed, compStats.completed) : null;
+                return (
+                  <div
+                    key={dept}
+                    className="bg-white rounded-xl shadow-sm p-3"
+                    style={{ borderTop: '3px solid #00A3AD' }}
+                  >
+                    <p className="text-xs text-gray-500 font-medium truncate">{dept}</p>
+                    <p className="text-xl font-bold mt-1" style={{ color: colors.primaryBlue }}>
+                      {stats.completed.toLocaleString()}
+                    </p>
+                    {change && change.text !== '--' && (
+                      <p className={`text-xs font-medium ${change.color}`}>{change.text}</p>
                     )}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {sortedDepts.map(dept => {
-                    const stats = overview.departments[dept];
-                    const compStats = overview.comparison?.[dept];
-                    const isExpanded = expandedDeptVisitTypes.has(dept);
-                    const visitTypeEntries = Object.entries(stats.visitTypes).sort(([, a], [, b]) => b - a);
-
-                    return (
-                      <tr key={dept}>
-                        <td colSpan={hasComparison ? 6 : 5} className="p-0">
-                          <table className="w-full">
-                            <tbody>
-                              <tr
-                                className="cursor-pointer hover:bg-gray-50"
-                                onClick={() => toggleDeptExpand(dept)}
-                              >
-                                <td className="px-5 py-3 text-sm font-medium text-gray-900 w-[25%]">
-                                  <span className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-400">{isExpanded ? '▼' : '▶'}</span>
-                                    {dept}
-                                  </span>
-                                </td>
-                                <td className="px-5 py-3 text-sm text-gray-700 text-right w-[15%]">
-                                  {stats.completed.toLocaleString()}
-                                </td>
-                                <td className="px-5 py-3 text-sm text-gray-400 text-right w-[12%]">
-                                  {totalCompleted > 0 ? `${((stats.completed / totalCompleted) * 100).toFixed(1)}%` : '--'}
-                                </td>
-                                <td className="px-5 py-3 text-sm text-gray-500 text-right w-[14%]">
-                                  {stats.noShowRate}%
-                                </td>
-                                <td className="px-5 py-3 text-sm text-gray-500 text-right w-[14%]">
-                                  {stats.lateCancelRate}%
-                                </td>
-                                {hasComparison && (
-                                  <td className={`px-5 py-3 text-sm text-right font-medium w-[15%] ${formatChange(stats.completed, compStats?.completed || 0).color}`}>
-                                    {formatChange(stats.completed, compStats?.completed || 0).text}
-                                  </td>
-                                )}
-                              </tr>
-                              {isExpanded && visitTypeEntries.map(([vt, count]) => (
-                                <tr key={vt} className="bg-gray-50/50">
-                                  <td className="pl-12 pr-5 py-2 text-sm text-gray-600 w-[25%]">{vt}</td>
-                                  <td className="px-5 py-2 text-sm text-gray-500 text-right w-[15%]">{count.toLocaleString()}</td>
-                                  <td className="px-5 py-2 text-sm text-gray-400 text-right w-[12%]">
-                                    {stats.completed > 0 ? `${((count / stats.completed) * 100).toFixed(1)}%` : '--'}
-                                  </td>
-                                  <td className="px-5 py-2 w-[14%]"></td>
-                                  <td className="px-5 py-2 w-[14%]"></td>
-                                  {hasComparison && <td className="px-5 py-2 w-[15%]"></td>}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {/* Totals row */}
-                  <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold">
-                    <td className="px-5 py-3 text-sm text-gray-700">Total</td>
-                    <td className="px-5 py-3 text-sm text-gray-700 text-right">{totalCompleted.toLocaleString()}</td>
-                    <td className="px-5 py-3 text-sm text-gray-400 text-right">100%</td>
-                    <td className="px-5 py-3"></td>
-                    <td className="px-5 py-3"></td>
-                    {hasComparison && (() => {
-                      const compTotal = sortedDepts.reduce((s, d) => s + (overview.comparison?.[d]?.completed || 0), 0);
-                      return (
-                        <td className={`px-5 py-3 text-sm text-right font-medium ${formatChange(totalCompleted, compTotal).color}`}>
-                          {formatChange(totalCompleted, compTotal).text}
-                        </td>
-                      );
-                    })()}
-                  </tr>
-                </tbody>
-              </table>
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Orders Into Department */}
-            {ordersData && ordersData.departments && ordersData.departments.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b">
-                  <h3 className="text-base font-semibold" style={{ color: colors.primaryBlue }}>Orders Into Department</h3>
-                  <p className="text-xs text-gray-400 mt-1">Which providers ordered tests going to each testing department</p>
+            {/* Section 1: Testing Volume by Department — Collapsible */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <button
+                onClick={() => toggleSection('volume')}
+                className="w-full px-5 py-4 border-b flex items-center justify-between hover:bg-gray-50 transition-colors"
+              >
+                <h3
+                  className="text-base font-semibold pl-4"
+                  style={{ color: colors.primaryBlue, borderLeft: '4px solid #00A3AD' }}
+                >
+                  Testing Volume by Department
+                </h3>
+                <div className="flex items-center gap-3">
+                  {!sectionsExpanded.volume && (
+                    <span className="text-sm text-gray-400">
+                      {sortedDepts.length} departments &middot; {totalCompleted.toLocaleString()} completed
+                    </span>
+                  )}
+                  <ChevronIcon expanded={sectionsExpanded.volume} />
                 </div>
-                <div className="divide-y divide-gray-200">
-                  {ordersData.departments.map(dept => {
-                    const compDept = ordersData.comparison?.find(d => d.department === dept.department);
-                    const outsideExpanded = expandedOrdersOutside.has(dept.department);
+              </button>
+              {sectionsExpanded.volume && (
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b bg-gray-50">
+                      <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th>
+                      <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Completed</th>
+                      <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">% of Total</th>
+                      <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">No Show %</th>
+                      <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Late Cancel %</th>
+                      {hasComparison && (
+                        <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Change</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {sortedDepts.map((dept, deptIdx) => {
+                      const stats = overview.departments[dept];
+                      const compStats = overview.comparison?.[dept];
+                      const isExpanded = expandedDeptVisitTypes.has(dept);
+                      const visitTypeEntries = Object.entries(stats.visitTypes).sort(([, a], [, b]) => b - a);
 
-                    return (
-                      <div key={dept.department} className="px-5 py-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold" style={{ color: colors.lightBlue }}>
-                            {dept.department}
-                          </h4>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-500">
-                              {dept.totalOrders.toLocaleString()} total orders
-                            </span>
-                            {hasComparison && compDept && (
-                              <span className={`text-xs font-medium ${formatChange(dept.totalOrders, compDept.totalOrders).color}`}>
-                                {formatChange(dept.totalOrders, compDept.totalOrders).text}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {dept.totalOrders === 0 ? (
-                          <p className="text-sm text-gray-400 italic">No orders data for this period</p>
-                        ) : (
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b">
-                              <th className="pb-2 text-left text-xs font-semibold text-gray-500 uppercase">Provider</th>
-                              <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">Orders</th>
-                              <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">% of Dept</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-50">
-                            {dept.internalProviders.map(p => (
-                              <tr key={p.name} className="hover:bg-gray-50">
-                                <td className="py-2 text-sm text-gray-900">{p.name}</td>
-                                <td className="py-2 text-sm text-gray-700 text-right">{p.count.toLocaleString()}</td>
-                                <td className="py-2 text-sm text-gray-400 text-right">
-                                  {dept.totalOrders > 0 ? `${((p.count / dept.totalOrders) * 100).toFixed(1)}%` : '--'}
-                                </td>
-                              </tr>
-                            ))}
-                            {dept.outsideTotal > 0 && (
-                              <>
+                      return (
+                        <tr key={dept}>
+                          <td colSpan={hasComparison ? 6 : 5} className="p-0">
+                            <table className="w-full">
+                              <tbody>
                                 <tr
-                                  className="cursor-pointer hover:bg-gray-50 bg-amber-50/50"
-                                  onClick={() => toggleOrdersOutside(dept.department)}
+                                  className={`cursor-pointer hover:bg-gray-50 transition-colors duration-150 ${deptIdx % 2 === 1 ? 'bg-gray-50/50' : ''}`}
+                                  onClick={() => toggleDeptExpand(dept)}
                                 >
-                                  <td className="py-2 text-sm font-medium text-gray-700">
+                                  <td className="px-5 py-3 text-sm font-medium text-gray-900 w-[25%]">
                                     <span className="flex items-center gap-2">
-                                      <span className="text-xs text-gray-400">{outsideExpanded ? '▼' : '▶'}</span>
-                                      Outside Providers
+                                      <ChevronIcon expanded={isExpanded} />
+                                      {dept}
                                     </span>
                                   </td>
-                                  <td className="py-2 text-sm text-gray-700 text-right font-medium">{dept.outsideTotal.toLocaleString()}</td>
-                                  <td className="py-2 text-sm text-gray-400 text-right">
-                                    {dept.totalOrders > 0 ? `${((dept.outsideTotal / dept.totalOrders) * 100).toFixed(1)}%` : '--'}
+                                  <td className="px-5 py-3 text-sm text-gray-700 text-right w-[15%]">
+                                    {stats.completed.toLocaleString()}
                                   </td>
-                                </tr>
-                                {outsideExpanded && dept.outsideProviders.map(p => (
-                                  <tr key={p.name} className="bg-amber-50/30">
-                                    <td className="pl-8 py-1.5 text-sm text-gray-600">{p.name}</td>
-                                    <td className="py-1.5 text-sm text-gray-500 text-right">{p.count.toLocaleString()}</td>
-                                    <td className="py-1.5 text-sm text-gray-400 text-right">
-                                      {dept.totalOrders > 0 ? `${((p.count / dept.totalOrders) * 100).toFixed(1)}%` : '--'}
+                                  <td className="px-5 py-3 text-sm text-gray-400 text-right w-[12%]">
+                                    {totalCompleted > 0 ? `${((stats.completed / totalCompleted) * 100).toFixed(1)}%` : '--'}
+                                  </td>
+                                  <td className="px-5 py-3 text-sm text-gray-500 text-right w-[14%]">
+                                    {stats.noShowRate}%
+                                  </td>
+                                  <td className="px-5 py-3 text-sm text-gray-500 text-right w-[14%]">
+                                    {stats.lateCancelRate}%
+                                  </td>
+                                  {hasComparison && (
+                                    <td className={`px-5 py-3 text-sm text-right font-medium w-[15%] ${formatChange(stats.completed, compStats?.completed || 0).color}`}>
+                                      {formatChange(stats.completed, compStats?.completed || 0).text}
                                     </td>
+                                  )}
+                                </tr>
+                                {isExpanded && visitTypeEntries.map(([vt, count]) => (
+                                  <tr key={vt} className="bg-gray-50/50 border-l-2 border-[#003D7A]/20">
+                                    <td className="pl-14 pr-5 py-2 text-sm text-gray-600 w-[25%]">{vt}</td>
+                                    <td className="px-5 py-2 text-sm text-gray-500 text-right w-[15%]">{count.toLocaleString()}</td>
+                                    <td className="px-5 py-2 text-sm text-gray-400 text-right w-[12%]">
+                                      {stats.completed > 0 ? `${((count / stats.completed) * 100).toFixed(1)}%` : '--'}
+                                    </td>
+                                    <td className="px-5 py-2 w-[14%]"></td>
+                                    <td className="px-5 py-2 w-[14%]"></td>
+                                    {hasComparison && <td className="px-5 py-2 w-[15%]"></td>}
                                   </tr>
                                 ))}
-                              </>
-                            )}
-                          </tbody>
-                        </table>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Totals row */}
+                    <tr className="bg-gray-100 border-t-2 border-gray-300 font-bold">
+                      <td className="px-5 py-3 text-sm text-gray-700">Total</td>
+                      <td className="px-5 py-3 text-sm text-gray-700 text-right">{totalCompleted.toLocaleString()}</td>
+                      <td className="px-5 py-3 text-sm text-gray-400 text-right">100%</td>
+                      <td className="px-5 py-3"></td>
+                      <td className="px-5 py-3"></td>
+                      {hasComparison && (() => {
+                        const compTotal = sortedDepts.reduce((s, d) => s + (overview.comparison?.[d]?.completed || 0), 0);
+                        return (
+                          <td className={`px-5 py-3 text-sm text-right font-medium ${formatChange(totalCompleted, compTotal).color}`}>
+                            {formatChange(totalCompleted, compTotal).text}
+                          </td>
+                        );
+                      })()}
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Section 2: Orders Into Department — Collapsible */}
+            {ordersData && ordersData.departments && ordersData.departments.length > 0 && (
+              <div className="bg-white rounded-xl shadow-md overflow-hidden">
+                <button
+                  onClick={() => toggleSection('orders')}
+                  className="w-full px-5 py-4 border-b flex items-center justify-between hover:bg-gray-50 transition-colors"
+                >
+                  <div>
+                    <h3
+                      className="text-base font-semibold pl-4"
+                      style={{ color: colors.primaryBlue, borderLeft: '4px solid #0078C8' }}
+                    >
+                      Orders Into Department
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-1 pl-4 ml-1">Which providers ordered tests going to each testing department</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {!sectionsExpanded.orders && (
+                      <span className="text-sm text-gray-400">
+                        {ordersData.departments.length} departments
+                      </span>
+                    )}
+                    <ChevronIcon expanded={sectionsExpanded.orders} />
+                  </div>
+                </button>
+                {sectionsExpanded.orders && (
+                  <div className="divide-y divide-gray-200">
+                    {ordersData.departments.map(dept => {
+                      const compDept = ordersData.comparison?.find(d => d.department === dept.department);
+                      const outsideExpanded = expandedOrdersOutside.has(dept.department);
+
+                      return (
+                        <div key={dept.department} className="px-5 py-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-semibold" style={{ color: colors.lightBlue }}>
+                              {dept.department}
+                            </h4>
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm text-gray-500">
+                                {dept.totalOrders.toLocaleString()} total orders
+                              </span>
+                              {hasComparison && compDept && (
+                                <span className={`text-xs font-medium ${formatChange(dept.totalOrders, compDept.totalOrders).color}`}>
+                                  {formatChange(dept.totalOrders, compDept.totalOrders).text}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {dept.totalOrders === 0 ? (
+                            <p className="text-sm text-gray-400 italic">No orders data for this period</p>
+                          ) : (
+                          <table className="w-full">
+                            <thead>
+                              <tr className="border-b">
+                                <th className="pb-2 text-left text-xs font-semibold text-gray-500 uppercase">Provider</th>
+                                <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">Orders</th>
+                                <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">% of Dept</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                              {dept.internalProviders.map((p, i) => (
+                                <tr key={p.name} className={`hover:bg-gray-50 transition-colors ${i % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
+                                  <td className="py-2 text-sm text-gray-900">{p.name}</td>
+                                  <td className="py-2 text-sm text-gray-700 text-right">{p.count.toLocaleString()}</td>
+                                  <td className="py-2 text-sm text-gray-400 text-right">
+                                    {dept.totalOrders > 0 ? `${((p.count / dept.totalOrders) * 100).toFixed(1)}%` : '--'}
+                                  </td>
+                                </tr>
+                              ))}
+                              {dept.outsideTotal > 0 && (
+                                <>
+                                  <tr
+                                    className="cursor-pointer hover:bg-gray-50 bg-amber-50/50 transition-colors"
+                                    onClick={() => toggleOrdersOutside(dept.department)}
+                                  >
+                                    <td className="py-2 text-sm font-medium text-gray-700">
+                                      <span className="flex items-center gap-2">
+                                        <ChevronIcon expanded={outsideExpanded} />
+                                        Outside Providers
+                                      </span>
+                                    </td>
+                                    <td className="py-2 text-sm text-gray-700 text-right font-medium">{dept.outsideTotal.toLocaleString()}</td>
+                                    <td className="py-2 text-sm text-gray-400 text-right">
+                                      {dept.totalOrders > 0 ? `${((dept.outsideTotal / dept.totalOrders) * 100).toFixed(1)}%` : '--'}
+                                    </td>
+                                  </tr>
+                                  {outsideExpanded && dept.outsideProviders.map(p => (
+                                    <tr key={p.name} className="bg-amber-50/30 border-l-2 border-amber-200">
+                                      <td className="pl-10 py-1.5 text-sm text-gray-600">{p.name}</td>
+                                      <td className="py-1.5 text-sm text-gray-500 text-right">{p.count.toLocaleString()}</td>
+                                      <td className="py-1.5 text-sm text-gray-400 text-right">
+                                        {dept.totalOrders > 0 ? `${((p.count / dept.totalOrders) * 100).toFixed(1)}%` : '--'}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </>
+                              )}
+                            </tbody>
+                          </table>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Referrals on Completed Studies */}
+            {/* Section 3: Referrals on Completed Studies — Collapsible */}
             {referralsData && referralsData.departments && referralsData.departments.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b">
-                  <h3 className="text-base font-semibold" style={{ color: colors.primaryBlue }}>Referrals on Completed Studies</h3>
-                  <p className="text-xs text-gray-400 mt-1">Of all completed tests in each department, who was the referring provider?</p>
-                </div>
-                <div className="divide-y divide-gray-200">
-                  {referralsData.departments.map(dept => {
-                    const outsideExpanded = expandedReferralsOutside.has(dept.department);
+              <div className="bg-white rounded-xl shadow-md overflow-hidden">
+                <button
+                  onClick={() => toggleSection('referrals')}
+                  className="w-full px-5 py-4 border-b flex items-center justify-between hover:bg-gray-50 transition-colors"
+                >
+                  <div>
+                    <h3
+                      className="text-base font-semibold pl-4"
+                      style={{ color: colors.primaryBlue, borderLeft: '4px solid #7C3AED' }}
+                    >
+                      Referrals on Completed Studies
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-1 pl-4 ml-1">Of all completed tests, who was the referring provider?</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {!sectionsExpanded.referrals && (
+                      <span className="text-sm text-gray-400">
+                        {referralsData.departments.length} departments
+                      </span>
+                    )}
+                    <ChevronIcon expanded={sectionsExpanded.referrals} />
+                  </div>
+                </button>
+                {sectionsExpanded.referrals && (
+                  <div className="divide-y divide-gray-200">
+                    {referralsData.departments.map(dept => {
+                      const outsideExpanded = expandedReferralsOutside.has(dept.department);
 
-                    return (
-                      <div key={dept.department} className="px-5 py-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold" style={{ color: colors.lightBlue }}>
-                            {dept.department}
-                          </h4>
-                          <span className="text-sm text-gray-500">
-                            {dept.totalStudies.toLocaleString()} completed studies
-                          </span>
-                        </div>
-                        {dept.internalProviders.length === 0 && dept.outsideTotal === 0 ? (
-                          <p className="text-sm text-gray-400 italic">No referral data for this period</p>
-                        ) : (
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b">
-                              <th className="pb-2 text-left text-xs font-semibold text-gray-500 uppercase">Referring Provider</th>
-                              <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">Referrals</th>
-                              <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">% of Dept</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-50">
-                            {dept.internalProviders.map(p => (
-                              <tr key={p.name} className="hover:bg-gray-50">
-                                <td className="py-2 text-sm text-gray-900">{p.name}</td>
-                                <td className="py-2 text-sm text-gray-700 text-right">
-                                  {p.count.toLocaleString()} of {dept.totalStudies.toLocaleString()}
-                                </td>
-                                <td className="py-2 text-sm text-right" style={{ color: colors.teal }}>
-                                  {p.percentage}%
-                                </td>
+                      return (
+                        <div key={dept.department} className="px-5 py-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-semibold" style={{ color: colors.lightBlue }}>
+                              {dept.department}
+                            </h4>
+                            <span className="text-sm text-gray-500">
+                              {dept.totalStudies.toLocaleString()} completed studies
+                            </span>
+                          </div>
+                          {dept.internalProviders.length === 0 && dept.outsideTotal === 0 ? (
+                            <p className="text-sm text-gray-400 italic">No referral data for this period</p>
+                          ) : (
+                          <table className="w-full">
+                            <thead>
+                              <tr className="border-b">
+                                <th className="pb-2 text-left text-xs font-semibold text-gray-500 uppercase">Referring Provider</th>
+                                <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">Referrals</th>
+                                <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">% of Dept</th>
                               </tr>
-                            ))}
-                            {dept.outsideTotal > 0 && (
-                              <>
-                                <tr
-                                  className="cursor-pointer hover:bg-gray-50 bg-amber-50/50"
-                                  onClick={() => toggleReferralsOutside(dept.department)}
-                                >
-                                  <td className="py-2 text-sm font-medium text-gray-700">
-                                    <span className="flex items-center gap-2">
-                                      <span className="text-xs text-gray-400">{outsideExpanded ? '▼' : '▶'}</span>
-                                      Outside Providers
-                                    </span>
-                                  </td>
-                                  <td className="py-2 text-sm text-gray-700 text-right font-medium">
-                                    {dept.outsideTotal.toLocaleString()} of {dept.totalStudies.toLocaleString()}
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                              {dept.internalProviders.map((p, i) => (
+                                <tr key={p.name} className={`hover:bg-gray-50 transition-colors ${i % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
+                                  <td className="py-2 text-sm text-gray-900">{p.name}</td>
+                                  <td className="py-2 text-sm text-gray-700 text-right">
+                                    {p.count.toLocaleString()} of {dept.totalStudies.toLocaleString()}
                                   </td>
                                   <td className="py-2 text-sm text-right" style={{ color: colors.teal }}>
-                                    {dept.outsidePercentage}%
+                                    {p.percentage}%
                                   </td>
                                 </tr>
-                                {outsideExpanded && dept.outsideProviders.map(p => (
-                                  <tr key={p.name} className="bg-amber-50/30">
-                                    <td className="pl-8 py-1.5 text-sm text-gray-600">{p.name}</td>
-                                    <td className="py-1.5 text-sm text-gray-500 text-right">
-                                      {p.count.toLocaleString()} of {dept.totalStudies.toLocaleString()}
+                              ))}
+                              {dept.outsideTotal > 0 && (
+                                <>
+                                  <tr
+                                    className="cursor-pointer hover:bg-gray-50 bg-amber-50/50 transition-colors"
+                                    onClick={() => toggleReferralsOutside(dept.department)}
+                                  >
+                                    <td className="py-2 text-sm font-medium text-gray-700">
+                                      <span className="flex items-center gap-2">
+                                        <ChevronIcon expanded={outsideExpanded} />
+                                        Outside Providers
+                                      </span>
                                     </td>
-                                    <td className="py-1.5 text-sm text-gray-400 text-right">
-                                      {p.percentage}%
+                                    <td className="py-2 text-sm text-gray-700 text-right font-medium">
+                                      {dept.outsideTotal.toLocaleString()} of {dept.totalStudies.toLocaleString()}
+                                    </td>
+                                    <td className="py-2 text-sm text-right" style={{ color: colors.teal }}>
+                                      {dept.outsidePercentage}%
                                     </td>
                                   </tr>
-                                ))}
-                              </>
-                            )}
-                          </tbody>
-                        </table>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                                  {outsideExpanded && dept.outsideProviders.map(p => (
+                                    <tr key={p.name} className="bg-amber-50/30 border-l-2 border-amber-200">
+                                      <td className="pl-10 py-1.5 text-sm text-gray-600">{p.name}</td>
+                                      <td className="py-1.5 text-sm text-gray-500 text-right">
+                                        {p.count.toLocaleString()} of {dept.totalStudies.toLocaleString()}
+                                      </td>
+                                      <td className="py-1.5 text-sm text-gray-400 text-right">
+                                        {p.percentage}%
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </>
+                              )}
+                            </tbody>
+                          </table>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>

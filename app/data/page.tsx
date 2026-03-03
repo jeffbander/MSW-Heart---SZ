@@ -340,23 +340,27 @@ function UploadHistory({
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl shadow-md overflow-hidden">
       <table className="w-full">
         <thead>
-          <tr className="border-b" style={{ backgroundColor: `${colors.primaryBlue}08` }}>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Report Type</th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">File</th>
-            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Rows</th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Uploaded</th>
-            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+          <tr className="border-b bg-gray-50">
+            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Report Type</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Report Month</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">File</th>
+            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Rows</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Uploaded</th>
+            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {uploads.map((upload) => (
-            <tr key={upload.id} className="hover:bg-gray-50">
+          {uploads.map((upload, idx) => (
+            <tr key={upload.id} className={`hover:bg-gray-50 transition-colors duration-150 ${idx % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
               <td className="px-4 py-3 text-sm font-medium text-gray-900">
                 {formatReportType(upload.report_type)}
+              </td>
+              <td className="px-4 py-3 text-sm text-gray-600">
+                {upload.report_month ? formatMonth(upload.report_month) : '-'}
               </td>
               <td className="px-4 py-3 text-sm text-gray-500 max-w-[200px] truncate" title={upload.file_name}>
                 {upload.file_name}

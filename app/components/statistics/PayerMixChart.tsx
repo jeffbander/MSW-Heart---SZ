@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Label } from 'recharts';
 
 const COLORS = ['#003D7A', '#0078C8', '#00A3AD', '#059669', '#D97706', '#DC2626', '#7C3AED', '#DB2777', '#4B5563', '#92400E', '#065F46', '#1E40AF'];
 
@@ -51,17 +51,21 @@ export default function PayerMixChart({ month, comparisonMode }: PayerMixChartPr
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-base font-semibold mb-4" style={{ color: '#003D7A' }}>Payer Mix</h3>
-        <div className="h-64 flex items-center justify-center text-gray-400 text-sm">Loading...</div>
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h3 className="text-base font-semibold mb-4 pl-4" style={{ color: '#003D7A', borderLeft: '4px solid #059669' }}>Payer Mix</h3>
+        <div className="h-64 flex items-center justify-center">
+          <div className="animate-pulse space-y-3 w-full">
+            <div className="h-48 bg-gray-200 rounded-full w-48 mx-auto"></div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
+    <div className="bg-white rounded-xl shadow-md p-6">
       <div className="flex items-start justify-between mb-4">
-        <h3 className="text-base font-semibold" style={{ color: '#003D7A' }}>Payer Mix</h3>
+        <h3 className="text-base font-semibold pl-4" style={{ color: '#003D7A', borderLeft: '4px solid #059669' }}>Payer Mix</h3>
         <span className="text-xs text-gray-400">{total.toLocaleString()} visits</span>
       </div>
 
@@ -118,7 +122,7 @@ export default function PayerMixChart({ month, comparisonMode }: PayerMixChartPr
                   data={data.slice(0, 10)}
                   cx="50%"
                   cy="50%"
-                  innerRadius={50}
+                  innerRadius={60}
                   outerRadius={100}
                   dataKey="value"
                   nameKey="name"
@@ -127,6 +131,12 @@ export default function PayerMixChart({ month, comparisonMode }: PayerMixChartPr
                   {data.slice(0, 10).map((_, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />
                   ))}
+                  <Label
+                    value={total.toLocaleString()}
+                    position="center"
+                    className="text-lg font-bold"
+                    style={{ fontSize: '18px', fontWeight: 'bold', fill: '#003D7A' }}
+                  />
                 </Pie>
                 <Tooltip
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -146,7 +156,7 @@ export default function PayerMixChart({ month, comparisonMode }: PayerMixChartPr
               </thead>
               <tbody>
                 {data.map((item, i) => (
-                  <tr key={item.name} className="border-b border-gray-50">
+                  <tr key={item.name} className={`border-b border-gray-50 ${i % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
                     <td className="py-1.5 flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
                       <span className="truncate">{item.name}</span>

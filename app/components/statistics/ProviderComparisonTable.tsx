@@ -68,11 +68,11 @@ function getCellColor(value: number, avg: number, lowerIsBetter?: boolean): stri
   if (avg === 0) return '';
   const ratio = value / avg;
   if (lowerIsBetter) {
-    if (ratio <= 0.8) return 'bg-green-50 text-green-700';
-    if (ratio >= 1.2) return 'bg-red-50 text-red-700';
+    if (ratio <= 0.8) return 'bg-green-50/70 text-green-800';
+    if (ratio >= 1.2) return 'bg-red-50/70 text-red-800';
   } else {
-    if (ratio >= 1.2) return 'bg-green-50 text-green-700';
-    if (ratio <= 0.8) return 'bg-red-50 text-red-700';
+    if (ratio >= 1.2) return 'bg-green-50/70 text-green-800';
+    if (ratio <= 0.8) return 'bg-red-50/70 text-red-800';
   }
   return '';
 }
@@ -120,8 +120,13 @@ export default function ProviderComparisonTable({ reportMonth, comparisonMode, o
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
-        Loading provider comparison...
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <div className="animate-pulse space-y-3">
+          <div className="h-4 bg-gray-200 rounded w-48"></div>
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="h-3 bg-gray-200 rounded w-full"></div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -136,8 +141,11 @@ export default function ProviderComparisonTable({ reportMonth, comparisonMode, o
 
   if (!data || data.providers.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
-        No provider data available for this period.
+      <div className="bg-white rounded-xl shadow-md p-12 text-center">
+        <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        <p className="text-gray-400">No provider data available for this period.</p>
       </div>
     );
   }
@@ -170,7 +178,7 @@ export default function ProviderComparisonTable({ reportMonth, comparisonMode, o
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold" style={{ color: colors.primaryBlue }}>
+        <h2 className="text-base font-medium text-gray-600">
           {comparisonMode === 'vs_ytd_prior_year' && data.comparisonLabel
             ? data.comparisonLabel
             : formatMonth(reportMonth)}
@@ -186,16 +194,16 @@ export default function ProviderComparisonTable({ reportMonth, comparisonMode, o
         </label>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b bg-gray-50">
+              <tr className="border-b bg-gray-50 sticky top-0 z-10">
                 {COLUMNS.map(col => (
                   <th
                     key={col.key}
                     onClick={() => handleSort(col.key)}
-                    className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none whitespace-nowrap"
+                    className="px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none whitespace-nowrap"
                     style={{ textAlign: col.key === 'name' ? 'left' : 'right' }}
                   >
                     <span className="inline-flex items-center gap-1">
@@ -209,17 +217,20 @@ export default function ProviderComparisonTable({ reportMonth, comparisonMode, o
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.map(provider => {
+              {rows.map((provider, idx) => {
                 const comp = compMap.get(provider.id);
                 return (
-                  <tr key={provider.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm font-medium whitespace-nowrap">
+                  <tr key={provider.id} className={`hover:bg-gray-50 transition-colors duration-150 ${idx % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
+                    <td className="px-3 py-2.5 text-sm font-medium whitespace-nowrap">
                       <button
                         onClick={() => onSelectProvider(provider.id)}
-                        className="hover:underline text-left"
+                        className="hover:underline text-left flex items-center gap-2"
                         style={{ color: colors.primaryBlue }}
                       >
-                        {provider.name}
+                        <span className="w-6 h-6 rounded-full bg-[#003D7A]/10 text-[#003D7A] text-xs font-semibold flex items-center justify-center flex-shrink-0">
+                          {provider.initials || provider.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                        </span>
+                        <span className="font-semibold">{provider.name}</span>
                       </button>
                     </td>
                     {COLUMNS.slice(1).map(col => {
@@ -234,13 +245,13 @@ export default function ProviderComparisonTable({ reportMonth, comparisonMode, o
                       return (
                         <td
                           key={col.key}
-                          className={`px-4 py-3 text-sm text-right whitespace-nowrap ${cellColor}`}
+                          className={`px-3 py-2.5 text-sm text-right whitespace-nowrap ${cellColor}`}
                         >
                           <div>
                             {col.isPercentage ? `${value}%` : value.toLocaleString()}
                           </div>
                           {change && change.text !== '--' && (
-                            <div className={`text-xs ${change.color}`}>{change.text}</div>
+                            <div className={`text-[10px] ${change.color}`}>{change.text}</div>
                           )}
                         </td>
                       );
@@ -250,8 +261,8 @@ export default function ProviderComparisonTable({ reportMonth, comparisonMode, o
               })}
 
               {/* Averages row */}
-              <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold">
-                <td className="px-4 py-3 text-sm text-gray-700">Average</td>
+              <tr className="bg-blue-50/80 border-t-2 border-gray-300 font-bold sticky bottom-0">
+                <td className="px-3 py-2.5 text-sm text-gray-700">Average</td>
                 {COLUMNS.slice(1).map(col => {
                   const value = avg[col.key as keyof AverageMetrics] as number;
                   const compAvg = data.comparisonAverages;
@@ -261,10 +272,10 @@ export default function ProviderComparisonTable({ reportMonth, comparisonMode, o
                     : null;
 
                   return (
-                    <td key={col.key} className="px-4 py-3 text-sm text-right text-gray-700 whitespace-nowrap">
+                    <td key={col.key} className="px-3 py-2.5 text-sm text-right text-gray-700 whitespace-nowrap">
                       <div>{col.isPercentage ? `${value}%` : value.toLocaleString()}</div>
                       {change && change.text !== '--' && (
-                        <div className={`text-xs font-medium ${change.color}`}>{change.text}</div>
+                        <div className={`text-[10px] font-medium ${change.color}`}>{change.text}</div>
                       )}
                     </td>
                   );

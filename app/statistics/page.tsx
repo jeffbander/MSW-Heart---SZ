@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import KPICard from '@/app/components/statistics/KPICard';
+import StatisticsNav from '@/app/components/statistics/StatisticsNav';
 import VisitBreakdownTable from '@/app/components/statistics/VisitBreakdownTable';
 import TestingVolumeSummary from '@/app/components/statistics/TestingVolumeSummary';
 import PayerMixChart from '@/app/components/statistics/PayerMixChart';
@@ -126,28 +127,9 @@ export default function StatisticsPage() {
             <h1 className="text-2xl font-bold" style={{ color: colors.primaryBlue }}>
               Practice Overview
             </h1>
-            <div className="flex items-center gap-2">
-              <Link
-                href="/statistics/providers"
-                className="text-sm px-3 py-1.5 rounded-lg text-white font-medium"
-                style={{ backgroundColor: colors.primaryBlue }}
-              >
-                Provider Scorecard
-              </Link>
-              <Link
-                href="/statistics/testing"
-                className="text-sm px-3 py-1.5 rounded-lg text-white font-medium"
-                style={{ backgroundColor: colors.teal }}
-              >
-                Testing Analytics
-              </Link>
-              <Link
-                href="/data"
-                className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100"
-              >
-                Manage Uploads
-              </Link>
-            </div>
+          </div>
+          <div className="mt-4">
+            <StatisticsNav />
           </div>
         </div>
 
@@ -193,7 +175,10 @@ export default function StatisticsPage() {
 
         {/* No data state */}
         {!loading && availableMonths.length === 0 && (
-          <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+          <div className="bg-white rounded-xl shadow-md p-12 text-center">
+            <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
             <p className="text-gray-500 mb-4">No statistics data uploaded yet.</p>
             <Link
               href="/data"
@@ -207,8 +192,25 @@ export default function StatisticsPage() {
 
         {/* Loading state */}
         {loading && (
-          <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
-            Loading statistics...
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="bg-white rounded-xl shadow-sm p-5 min-h-[120px]">
+                  <div className="animate-pulse">
+                    <div className="h-3 bg-gray-200 rounded w-24 mb-3"></div>
+                    <div className="h-8 bg-gray-200 rounded w-16"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="bg-white rounded-xl shadow-md p-6">
+              <div className="animate-pulse space-y-3">
+                <div className="h-4 bg-gray-200 rounded w-48"></div>
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-3 bg-gray-200 rounded w-full"></div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -224,7 +226,7 @@ export default function StatisticsPage() {
           <div className="space-y-6">
             {/* Month display */}
             {selectedMonth && (
-              <h2 className="text-lg font-semibold" style={{ color: colors.primaryBlue }}>
+              <h2 className="text-base font-medium text-gray-600">
                 {comparisonMode === 'vs_ytd_prior_year'
                   ? `YTD through ${formatMonth(selectedMonth)}`
                   : formatMonth(selectedMonth)}
@@ -239,6 +241,7 @@ export default function StatisticsPage() {
                 comparison={data.comparison
                   ? data.current.patientsSeenExclAncillary - data.comparison.patientsSeenExclAncillary
                   : null}
+                accentColor="#003D7A"
               />
               <KPICard
                 title="New Patient %"
@@ -247,23 +250,27 @@ export default function StatisticsPage() {
                   ? data.current.newPatientPct - data.comparison.newPatientPct
                   : null}
                 isPercentage
+                accentColor="#0078C8"
               />
               <KPICard
                 title="No Show Rate"
                 value={`${data.current.noShowRate}%`}
                 comparison={data.comparison ? data.comparison.noShowRate - data.current.noShowRate : null}
                 isPercentage
+                accentColor="#DC2626"
               />
               <KPICard
                 title="Late Cancel Rate"
                 value={`${data.current.lateCancelRate}%`}
                 comparison={data.comparison ? data.comparison.lateCancelRate - data.current.lateCancelRate : null}
                 isPercentage
+                accentColor="#D97706"
               />
               <KPICard
                 title="Total Scheduled"
                 value={data.current.totalScheduled}
                 comparison={data.comparison ? data.current.totalScheduled - data.comparison.totalScheduled : null}
+                accentColor="#00A3AD"
               />
             </div>
 
@@ -283,8 +290,8 @@ export default function StatisticsPage() {
 
             {/* Orders Summary */}
             {Object.keys(data.current.orders).length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b">
+              <div className="bg-white rounded-xl shadow-md overflow-hidden">
+                <div className="px-5 py-4 border-b pl-4" style={{ borderLeft: '4px solid #0078C8' }}>
                   <h3 className="text-base font-semibold" style={{ color: colors.primaryBlue }}>Orders by Category</h3>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-px bg-gray-100">

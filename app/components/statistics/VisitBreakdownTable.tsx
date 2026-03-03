@@ -30,15 +30,33 @@ function formatChange(current: number, comparison: number): { text: string; colo
   };
 }
 
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 export default function VisitBreakdownTable({ current, comparison, ancillaryCurrent, ancillaryComparison }: VisitBreakdownTableProps) {
   const [ancillaryExpanded, setAncillaryExpanded] = useState(false);
   const hasComparison = !!comparison;
   const totalSeen = CATEGORIES.reduce((sum, cat) => sum + (current[cat]?.seen || 0), 0);
 
   return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl shadow-md overflow-hidden">
       <div className="px-5 py-4 border-b">
-        <h3 className="text-base font-semibold" style={{ color: '#003D7A' }}>Office Visit Breakdown</h3>
+        <h3
+          className="text-base font-semibold pl-4"
+          style={{ color: '#003D7A', borderLeft: '4px solid #003D7A' }}
+        >
+          Office Visit Breakdown
+        </h3>
       </div>
       <table className="w-full">
         <thead>
@@ -56,7 +74,7 @@ export default function VisitBreakdownTable({ current, comparison, ancillaryCurr
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {CATEGORIES.map((cat) => {
+          {CATEGORIES.map((cat, catIdx) => {
             const cur = current[cat] || { total: 0, seen: 0 };
             const comp = comparison?.[cat] || { total: 0, seen: 0 };
             const isAncillary = cat === 'Ancillary';
@@ -68,14 +86,16 @@ export default function VisitBreakdownTable({ current, comparison, ancillaryCurr
                     <tbody>
                       {/* Main row */}
                       <tr
-                        className={isAncillary ? 'bg-blue-50 cursor-pointer hover:bg-blue-100' : 'hover:bg-gray-50'}
+                        className={`transition-colors duration-150 ${
+                          isAncillary
+                            ? 'bg-blue-50 cursor-pointer hover:bg-blue-100'
+                            : `hover:bg-gray-50 ${catIdx % 2 === 1 ? 'bg-gray-50/50' : ''}`
+                        }`}
                         onClick={isAncillary ? () => setAncillaryExpanded(!ancillaryExpanded) : undefined}
                       >
                         <td className="px-5 py-3 text-sm font-medium text-gray-900 w-[25%]">
                           <span className="flex items-center gap-2">
-                            {isAncillary && (
-                              <span className="text-xs text-gray-400">{ancillaryExpanded ? '▼' : '▶'}</span>
-                            )}
+                            {isAncillary && <ChevronIcon expanded={ancillaryExpanded} />}
                             {cat}
                           </span>
                         </td>
@@ -106,7 +126,7 @@ export default function VisitBreakdownTable({ current, comparison, ancillaryCurr
                           {Object.entries(ancillaryCurrent).map(([sub, subCur]) => {
                             const subComp = ancillaryComparison?.[sub] || { total: 0, seen: 0 };
                             return (
-                              <tr key={sub} className="bg-blue-50/50">
+                              <tr key={sub} className="bg-blue-50/50 border-l-2 border-[#003D7A]/20">
                                 <td className="pl-12 pr-5 py-2 text-sm text-gray-600 w-[25%]">{sub}</td>
                                 <td className="px-5 py-2 text-sm text-gray-600 text-right w-[15%]">
                                   {subCur.seen.toLocaleString()}
