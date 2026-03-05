@@ -52,6 +52,8 @@ export default function EchoPage() {
 
   // UI state
   const [weekOffset, setWeekOffset] = useState(0);
+  const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
+  const [monthOffset, setMonthOffset] = useState(0);
 
   // Modal state
   const [selectedRoom, setSelectedRoom] = useState<EchoRoom | null>(null);
@@ -109,6 +111,56 @@ export default function EchoPage() {
   const weekStartDate = dateRange[0];
   const weekEndDate = dateRange[6];
 
+  // Month view: compute weekly date ranges covering the calendar month
+  const monthDateRanges = useMemo(() => {
+    if (viewMode !== 'month') return [];
+    const target = new Date(frozenToday);
+    target.setMonth(target.getMonth() + monthOffset);
+    target.setDate(1);
+
+    // Find Monday on or before the 1st
+    const firstDay = target.getDay(); // 0=Sun
+    const mondayOffset = firstDay === 0 ? -6 : 1 - firstDay;
+    const startMonday = new Date(target);
+    startMonday.setDate(target.getDate() + mondayOffset);
+
+    // Last day of month
+    const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0);
+    // Find Sunday on or after last day
+    const lastDayOfWeek = lastDay.getDay();
+    const sundayOffset = lastDayOfWeek === 0 ? 0 : 7 - lastDayOfWeek;
+    const endSunday = new Date(lastDay);
+    endSunday.setDate(lastDay.getDate() + sundayOffset);
+
+    const weeks: string[][] = [];
+    const current = new Date(startMonday);
+    while (current <= endSunday) {
+      const weekDates: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        weekDates.push(formatLocalDate(current));
+        current.setDate(current.getDate() + 1);
+      }
+      weeks.push(weekDates);
+    }
+    return weeks;
+  }, [viewMode, monthOffset]);
+
+  // Effective date range for fetching (covers week or entire month)
+  const effectiveStartDate = viewMode === 'month' && monthDateRanges.length > 0
+    ? monthDateRanges[0][0]
+    : weekStartDate;
+  const effectiveEndDate = viewMode === 'month' && monthDateRanges.length > 0
+    ? monthDateRanges[monthDateRanges.length - 1][6]
+    : weekEndDate;
+
+  // Month label
+  const monthLabel = useMemo(() => {
+    if (viewMode !== 'month') return '';
+    const target = new Date(frozenToday);
+    target.setMonth(target.getMonth() + monthOffset);
+    return target.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [viewMode, monthOffset]);
+
   // Fetch all data
   const fetchData = async () => {
     setLoading(true);
@@ -116,9 +168,9 @@ export default function EchoPage() {
       const [techsRes, roomsRes, assignmentsRes, ptoRes, holidaysRes] = await Promise.all([
         fetch('/api/echo-techs'),
         fetch('/api/echo-rooms'),
-        fetch(`/api/echo-schedule?startDate=${weekStartDate}&endDate=${weekEndDate}`),
-        fetch(`/api/echo-pto?startDate=${weekStartDate}&endDate=${weekEndDate}`),
-        fetch(`/api/holidays?startDate=${weekStartDate}&endDate=${weekEndDate}`)
+        fetch(`/api/echo-schedule?startDate=${effectiveStartDate}&endDate=${effectiveEndDate}`),
+        fetch(`/api/echo-pto?startDate=${effectiveStartDate}&endDate=${effectiveEndDate}`),
+        fetch(`/api/holidays?startDate=${effectiveStartDate}&endDate=${effectiveEndDate}`)
       ]);
 
       if (techsRes.ok) setEchoTechs(await techsRes.json());
@@ -135,7 +187,7 @@ export default function EchoPage() {
 
   useEffect(() => {
     fetchData();
-  }, [weekStartDate, weekEndDate]);
+  }, [effectiveStartDate, effectiveEndDate]);
 
   // Fetch providers tab data
   const fetchProvidersData = async () => {
@@ -163,10 +215,22 @@ export default function EchoPage() {
     }
   }, [activeTab, weekStartDate, weekEndDate]);
 
-  // Clear undo/redo stack when week changes
+  // Clear undo/redo stack when week/view/month changes
   useEffect(() => {
     undoRedo.clear();
-  }, [weekStartDate]);
+  }, [effectiveStartDate, effectiveEndDate]);
+
+  // Listen for toast events from schedule-grid (e.g., copy notification)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.type === 'info') toast.info(detail.message);
+      else if (detail?.type === 'success') toast.success(detail.message);
+      else if (detail?.type === 'error') toast.error(detail.message);
+    };
+    document.addEventListener('schedule-toast', handler);
+    return () => document.removeEventListener('schedule-toast', handler);
+  }, [toast]);
 
   // Fetch templates
   const fetchTemplates = async () => {
@@ -338,48 +402,67 @@ export default function EchoPage() {
     }
   };
 
-  // Add PTO (optimistic)
-  const handleAddPTO = async (techId: string, reason: string | null, timeBlock: 'AM' | 'PM' | 'BOTH') => {
-    const tech = echoTechs.find(t => t.id === techId);
-    const optimisticId = `optimistic-pto-${Date.now()}`;
-    const optimistic: EchoPTO = {
-      id: optimisticId,
-      date: selectedDate,
-      echo_tech_id: techId,
-      time_block: timeBlock,
-      reason,
-      created_at: new Date().toISOString(),
-      echo_tech: tech,
-    };
-
-    setPtoDays(prev => [...prev, optimistic]);
-    setShowPTOModal(false);
+  // Add PTO (optimistic) — supports multiple techs
+  const handleAddPTO = async (techIds: string[], reason: string | null, timeBlock: 'AM' | 'PM' | 'BOTH') => {
     const label = timeBlock === 'BOTH' ? 'Full Day' : timeBlock;
-    toast.success(`PTO added for ${tech?.name || 'tech'} (${label})`);
+    const optimisticEntries: { optimisticId: string; techId: string; tech: EchoTech | undefined }[] = [];
 
-    try {
-      const response = await fetch('/api/echo-pto', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: selectedDate,
-          echo_tech_id: techId,
-          time_block: timeBlock,
-          reason
-        })
-      });
+    for (let i = 0; i < techIds.length; i++) {
+      const techId = techIds[i];
+      const tech = echoTechs.find(t => t.id === techId);
+      const optimisticId = `optimistic-pto-${Date.now()}-${i}`;
+      const optimistic: EchoPTO = {
+        id: optimisticId,
+        date: selectedDate,
+        echo_tech_id: techId,
+        time_block: timeBlock,
+        reason,
+        created_at: new Date().toISOString(),
+        echo_tech: tech,
+      };
+      setPtoDays(prev => [...prev, optimistic]);
+      optimisticEntries.push({ optimisticId, techId, tech });
+    }
 
-      if (response.ok) {
-        const real = await response.json();
-        setPtoDays(prev => prev.map(p => p.id === optimisticId ? { ...real, echo_tech: tech } : p));
-      } else {
-        setPtoDays(prev => prev.filter(p => p.id !== optimisticId));
-        const error = await response.json();
-        toast.error(error.error || 'Failed to add PTO');
+    setShowPTOModal(false);
+    const names = optimisticEntries.map(e => e.tech?.name || 'tech').join(', ');
+    toast.success(`PTO added for ${names} (${label})`);
+
+    let failCount = 0;
+    const created: { ptoId: string; techId: string; techName: string }[] = [];
+
+    for (const entry of optimisticEntries) {
+      try {
+        const response = await fetch('/api/echo-pto', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: selectedDate,
+            echo_tech_id: entry.techId,
+            time_block: timeBlock,
+            reason
+          })
+        });
+
+        if (response.ok) {
+          const real = await response.json();
+          setPtoDays(prev => prev.map(p => p.id === entry.optimisticId ? { ...real, echo_tech: entry.tech } : p));
+          created.push({ ptoId: real.id, techId: entry.techId, techName: entry.tech?.name || 'tech' });
+        } else {
+          setPtoDays(prev => prev.filter(p => p.id !== entry.optimisticId));
+          failCount++;
+        }
+      } catch {
+        setPtoDays(prev => prev.filter(p => p.id !== entry.optimisticId));
+        failCount++;
       }
-    } catch {
-      setPtoDays(prev => prev.filter(p => p.id !== optimisticId));
-      toast.error('Failed to add PTO');
+    }
+
+    if (failCount > 0) {
+      toast.error(`${failCount} PTO entr${failCount !== 1 ? 'ies' : 'y'} failed`);
+    }
+    if (created.length > 0) {
+      undoRedo.push({ type: 'bulk_create_pto', ptoEntries: created, date: selectedDate, timeBlock, reason });
     }
   };
 
@@ -625,6 +708,66 @@ export default function EchoPage() {
     }
   };
 
+  // Paste fill — each entry has its own techId (from copy/paste)
+  const handlePasteFill = async (entries: { roomId: string; date: string; timeBlock: 'AM' | 'PM'; techId: string }[]) => {
+    const optimisticAssignments: EchoScheduleAssignment[] = entries.map((entry, i) => ({
+      id: `optimistic-paste-${Date.now()}-${i}`,
+      date: entry.date,
+      echo_room_id: entry.roomId,
+      echo_tech_id: entry.techId,
+      time_block: entry.timeBlock,
+      notes: null,
+      created_at: new Date().toISOString(),
+      echo_tech: echoTechs.find(t => t.id === entry.techId),
+      echo_room: echoRooms.find(r => r.id === entry.roomId),
+    }));
+
+    setAssignments(prev => [...prev, ...optimisticAssignments]);
+    toast.success(`Pasting ${entries.length} assignment${entries.length !== 1 ? 's' : ''}...`);
+
+    let failCount = 0;
+    const created: { assignmentId: string; techId: string; roomId: string; date: string; timeBlock: 'AM' | 'PM' }[] = [];
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const optId = optimisticAssignments[i].id;
+
+      try {
+        const response = await fetch('/api/echo-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: entry.date,
+            echo_room_id: entry.roomId,
+            echo_tech_id: entry.techId,
+            time_block: entry.timeBlock
+          })
+        });
+
+        if (response.ok) {
+          const real = await response.json();
+          const tech = echoTechs.find(t => t.id === entry.techId);
+          const room = echoRooms.find(r => r.id === entry.roomId);
+          setAssignments(prev => prev.map(a => a.id === optId ? { ...real, echo_tech: tech, echo_room: room } : a));
+          created.push({ assignmentId: real.id, techId: entry.techId, roomId: entry.roomId, date: entry.date, timeBlock: entry.timeBlock });
+        } else {
+          setAssignments(prev => prev.filter(a => a.id !== optId));
+          failCount++;
+        }
+      } catch {
+        setAssignments(prev => prev.filter(a => a.id !== optId));
+        failCount++;
+      }
+    }
+
+    if (failCount > 0) {
+      toast.error(`${failCount} paste${failCount !== 1 ? 's' : ''} failed`);
+    }
+    if (created.length > 0) {
+      undoRedo.push({ type: 'bulk_create', assignments: created, techName: 'pasted' });
+    }
+  };
+
   // Move assignment to a different cell via drag (Feature 9)
   const handleMoveAssignment = async (assignmentId: string, newRoomId: string, newDate: string, newTimeBlock: 'AM' | 'PM') => {
     const existing = assignments.find(a => a.id === assignmentId);
@@ -762,6 +905,17 @@ export default function EchoPage() {
           undoRedo.pushRedo(action);
           break;
         }
+        case 'bulk_create_pto': {
+          const ptoIds = new Set(action.ptoEntries.map(e => e.ptoId));
+          setPtoDays(prev => prev.filter(p => !ptoIds.has(p.id)));
+          const names = action.ptoEntries.map(e => e.techName).join(', ');
+          toast.info(`Undid: PTO for ${names}`);
+          for (const e of action.ptoEntries) {
+            try { await fetch(`/api/echo-pto?id=${e.ptoId}`, { method: 'DELETE' }); } catch { /* best effort */ }
+          }
+          undoRedo.pushRedo(action);
+          break;
+        }
       }
     } finally {
       undoingRef.current = false;
@@ -855,6 +1009,28 @@ export default function EchoPage() {
             } catch { /* best effort */ }
           }
           action.assignments = newAssignments;
+          undoRedo.pushUndo(action);
+          break;
+        }
+        case 'bulk_create_pto': {
+          const newEntries: typeof action.ptoEntries = [];
+          const names = action.ptoEntries.map(e => e.techName).join(', ');
+          toast.info(`Redid: PTO for ${names}`);
+          for (const e of action.ptoEntries) {
+            try {
+              const tech = echoTechs.find(t => t.id === e.techId);
+              const res = await fetch('/api/echo-pto', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: action.date, echo_tech_id: e.techId, time_block: action.timeBlock, reason: action.reason })
+              });
+              if (res.ok) {
+                const real = await res.json();
+                setPtoDays(prev => [...prev, { ...real, echo_tech: tech }]);
+                newEntries.push({ ...e, ptoId: real.id });
+              }
+            } catch { /* best effort */ }
+          }
+          action.ptoEntries = newEntries;
           undoRedo.pushUndo(action);
           break;
         }
@@ -977,7 +1153,7 @@ export default function EchoPage() {
                 </div>
 
                 {/* Templates Dropdown */}
-                {canManageTestingTemplates && (
+                {canManageTestingTemplates && viewMode === 'week' && (
                 <div className="relative">
                   <button
                     onClick={() => setShowTemplateDropdown(!showTemplateDropdown)}
@@ -1027,7 +1203,7 @@ export default function EchoPage() {
                 </div>
                 )}
 
-                {canEditTestingAssignments && (
+                {canEditTestingAssignments && viewMode === 'week' && (
                 <button
                   onClick={handleCopyPreviousWeek}
                   disabled={copyingWeek}
@@ -1050,35 +1226,104 @@ export default function EchoPage() {
           </div>
         </div>
 
-        {/* Week Navigation */}
+        {/* Navigation */}
         <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setWeekOffset(w => w - 1)}
-                className="px-3 py-1 rounded border hover:bg-gray-50"
-                style={{ borderColor: colors.border }}
-              >
-                ← Prev
-              </button>
-              <button
-                onClick={() => setWeekOffset(0)}
-                className="px-3 py-1 rounded border hover:bg-gray-50"
-                style={{ borderColor: colors.border }}
-              >
-                Today
-              </button>
-              <button
-                onClick={() => setWeekOffset(w => w + 1)}
-                className="px-3 py-1 rounded border hover:bg-gray-50"
-                style={{ borderColor: colors.border }}
-              >
-                Next →
-              </button>
+              {viewMode === 'week' ? (
+                <>
+                  <button
+                    onClick={() => setWeekOffset(w => w - 1)}
+                    className="px-3 py-1 rounded border hover:bg-gray-50"
+                    style={{ borderColor: colors.border }}
+                  >
+                    ← Prev
+                  </button>
+                  <button
+                    onClick={() => setWeekOffset(0)}
+                    className="px-3 py-1 rounded border hover:bg-gray-50"
+                    style={{ borderColor: colors.border }}
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => setWeekOffset(w => w + 1)}
+                    className="px-3 py-1 rounded border hover:bg-gray-50"
+                    style={{ borderColor: colors.border }}
+                  >
+                    Next →
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setMonthOffset(m => m - 1)}
+                    className="px-3 py-1 rounded border hover:bg-gray-50"
+                    style={{ borderColor: colors.border }}
+                  >
+                    ← Prev
+                  </button>
+                  <button
+                    onClick={() => setMonthOffset(0)}
+                    className="px-3 py-1 rounded border hover:bg-gray-50"
+                    style={{ borderColor: colors.border }}
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => setMonthOffset(m => m + 1)}
+                    className="px-3 py-1 rounded border hover:bg-gray-50"
+                    style={{ borderColor: colors.border }}
+                  >
+                    Next →
+                  </button>
+                </>
+              )}
+
+              {/* View mode toggle */}
+              <div className="flex rounded-lg border overflow-hidden ml-4" style={{ borderColor: colors.border }}>
+                <button
+                  onClick={() => {
+                    if (viewMode !== 'week') {
+                      setViewMode('week');
+                      setWeekOffset(0);
+                    }
+                  }}
+                  className={`px-3 py-1 text-sm font-medium transition-colors ${
+                    viewMode === 'week'
+                      ? 'text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                  style={viewMode === 'week' ? { backgroundColor: colors.primaryBlue } : undefined}
+                >
+                  Week
+                </button>
+                <button
+                  onClick={() => {
+                    if (viewMode !== 'month') {
+                      setViewMode('month');
+                      setActiveTab('techs');
+                      // Derive monthOffset from current weekOffset
+                      const target = new Date(frozenToday);
+                      target.setDate(target.getDate() + weekOffset * 7);
+                      const diff = (target.getFullYear() - frozenToday.getFullYear()) * 12 + (target.getMonth() - frozenToday.getMonth());
+                      setMonthOffset(diff);
+                    }
+                  }}
+                  className={`px-3 py-1 text-sm font-medium transition-colors border-l ${
+                    viewMode === 'month'
+                      ? 'text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                  style={viewMode === 'month' ? { backgroundColor: colors.primaryBlue, borderColor: colors.primaryBlue } : { borderColor: colors.border }}
+                >
+                  Month
+                </button>
+              </div>
             </div>
 
             <h2 className="text-lg font-semibold" style={{ color: colors.primaryBlue }}>
-              Week of {formatWeekLabel()}
+              {viewMode === 'week' ? `Week of ${formatWeekLabel()}` : monthLabel}
             </h2>
 
             <div className="text-sm text-gray-500">
@@ -1102,13 +1347,15 @@ export default function EchoPage() {
               Techs
             </button>
             <button
-              onClick={() => setActiveTab('providers')}
+              onClick={() => viewMode === 'week' && setActiveTab('providers')}
+              disabled={viewMode === 'month'}
               className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'providers'
                   ? 'border-current text-[#003D7A]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+              } ${viewMode === 'month' ? 'opacity-40 cursor-not-allowed' : ''}`}
               style={activeTab === 'providers' ? { color: colors.primaryBlue } : undefined}
+              title={viewMode === 'month' ? 'Providers view is only available in week mode' : undefined}
             >
               Providers
             </button>
@@ -1121,6 +1368,49 @@ export default function EchoPage() {
             {loading ? (
               <div className="bg-white rounded-lg shadow-sm p-4 text-center py-8 text-gray-500">
                 Loading schedule...
+              </div>
+            ) : viewMode === 'month' ? (
+              <div className="space-y-6">
+                {monthDateRanges.map((weekDates, weekIdx) => {
+                  const weekStart = new Date(weekDates[0] + 'T00:00:00');
+                  const weekLabel = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                  // Filter data for this specific week
+                  const weekAssignments = assignments.filter(a => weekDates.includes(a.date));
+                  const weekPto = ptoDays.filter(p => weekDates.includes(p.date));
+                  const weekHolidays = holidays.filter(h => weekDates.includes(h.date));
+
+                  return (
+                    <div key={weekDates[0]}>
+                      <h3 className="text-sm font-semibold mb-2 px-1" style={{ color: colors.primaryBlue }}>
+                        Week of {weekLabel}
+                      </h3>
+                      <ScheduleGrid
+                        dateRange={weekDates}
+                        echoTechs={echoTechs}
+                        echoRooms={echoRooms}
+                        assignments={weekAssignments}
+                        ptoDays={weekPto}
+                        holidays={weekHolidays}
+                        isAdmin={canManageTesting}
+                        canEditAssignments={canEditTestingAssignments}
+                        canEditPto={canEditTestingPto}
+                        canReorderRooms={canManageTestingRooms}
+                        onCellClick={handleCellClick}
+                        onPTOClick={handlePTOClick}
+                        onPTODelete={handleDeletePTO}
+                        onQuickDelete={handleDeleteAssignment}
+                        onQuickAssign={handleQuickAssign}
+                        onBulkAssign={handleBulkAssign}
+                        onMoveAssignment={handleMoveAssignment}
+                        onFillCells={handleBulkAssign}
+                        onPasteFill={handlePasteFill}
+                        collapsedCategories={collapsedCategories}
+                        onToggleCategory={toggleCategory}
+                        onRoomReorder={handleRoomReorder}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <ScheduleGrid
@@ -1141,6 +1431,8 @@ export default function EchoPage() {
                 onQuickAssign={handleQuickAssign}
                 onBulkAssign={handleBulkAssign}
                 onMoveAssignment={handleMoveAssignment}
+                onFillCells={handleBulkAssign}
+                onPasteFill={handlePasteFill}
                 collapsedCategories={collapsedCategories}
                 onToggleCategory={toggleCategory}
                 onRoomReorder={handleRoomReorder}
@@ -1270,7 +1562,7 @@ export default function EchoPage() {
   );
 }
 
-// PTO Form Component
+// PTO Form Component — multi-tech selection with checkboxes
 function PTOForm({
   echoTechs,
   existingPTO,
@@ -1281,10 +1573,11 @@ function PTOForm({
   echoTechs: EchoTech[];
   existingPTO: EchoPTO[];
   defaultTimeBlock: 'AM' | 'PM';
-  onSubmit: (techId: string, reason: string | null, timeBlock: 'AM' | 'PM' | 'BOTH') => void;
+  onSubmit: (techIds: string[], reason: string | null, timeBlock: 'AM' | 'PM' | 'BOTH') => void;
   onCancel: () => void;
 }) {
-  const [techId, setTechId] = useState('');
+  const [selectedTechIds, setSelectedTechIds] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
   const [reason, setReason] = useState('');
   const [timeBlock, setTimeBlock] = useState<'AM' | 'PM' | 'BOTH'>(defaultTimeBlock);
 
@@ -1293,15 +1586,51 @@ function PTOForm({
     if (!t.is_active) return false;
     const techPTO = existingPTO.filter(p => p.echo_tech_id === t.id);
     for (const p of techPTO) {
-      // If existing PTO is BOTH, tech is fully covered
       if (p.time_block === 'BOTH') return false;
-      // If we're adding BOTH but tech has any existing PTO, skip
       if (timeBlock === 'BOTH' && (p.time_block === 'AM' || p.time_block === 'PM')) return false;
-      // If existing matches selected time block, skip
       if (p.time_block === timeBlock) return false;
     }
     return true;
   });
+
+  // Auto-deselect techs that become unavailable when time block changes
+  const availableIds = new Set(availableTechs.map(t => t.id));
+  const effectiveSelection = new Set([...selectedTechIds].filter(id => availableIds.has(id)));
+  if (effectiveSelection.size !== selectedTechIds.size) {
+    // Will sync on next render
+  }
+
+  const filteredTechs = availableTechs.filter(t =>
+    t.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const toggleTech = (techId: string) => {
+    setSelectedTechIds(prev => {
+      const next = new Set(prev);
+      if (next.has(techId)) {
+        next.delete(techId);
+      } else {
+        next.add(techId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (effectiveSelection.size === availableTechs.length) {
+      setSelectedTechIds(new Set());
+    } else {
+      setSelectedTechIds(new Set(availableTechs.map(t => t.id)));
+    }
+  };
+
+  const removeTech = (techId: string) => {
+    setSelectedTechIds(prev => {
+      const next = new Set(prev);
+      next.delete(techId);
+      return next;
+    });
+  };
 
   return (
     <div>
@@ -1311,7 +1640,23 @@ function PTOForm({
           {(['AM', 'PM', 'BOTH'] as const).map((tb) => (
             <button
               key={tb}
-              onClick={() => setTimeBlock(tb)}
+              onClick={() => {
+                setTimeBlock(tb);
+                // Auto-deselect techs that become unavailable
+                setSelectedTechIds(prev => {
+                  const newAvailable = new Set(echoTechs.filter(t => {
+                    if (!t.is_active) return false;
+                    const techPTO = existingPTO.filter(p => p.echo_tech_id === t.id);
+                    for (const p of techPTO) {
+                      if (p.time_block === 'BOTH') return false;
+                      if (tb === 'BOTH' && (p.time_block === 'AM' || p.time_block === 'PM')) return false;
+                      if (p.time_block === tb) return false;
+                    }
+                    return true;
+                  }).map(t => t.id));
+                  return new Set([...prev].filter(id => newAvailable.has(id)));
+                });
+              }}
               className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                 timeBlock === tb
                   ? 'bg-amber-600 text-white'
@@ -1325,17 +1670,69 @@ function PTOForm({
       </div>
 
       <div className="mb-4">
-        <label className="block text-sm font-medium mb-2">Tech</label>
-        <select
-          value={techId}
-          onChange={(e) => setTechId(e.target.value)}
-          className="w-full px-3 py-2 border rounded"
-        >
-          <option value="">Select a tech...</option>
-          {availableTechs.map(tech => (
-            <option key={tech.id} value={tech.id}>{tech.name}</option>
-          ))}
-        </select>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-sm font-medium">Techs</label>
+          <button
+            onClick={toggleAll}
+            className="text-xs text-blue-600 hover:text-blue-800"
+          >
+            {effectiveSelection.size === availableTechs.length ? 'Deselect All' : 'Select All'}
+          </button>
+        </div>
+
+        {/* Selected techs as chips */}
+        {effectiveSelection.size > 0 && (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {[...effectiveSelection].map(id => {
+              const tech = echoTechs.find(t => t.id === id);
+              return (
+                <span
+                  key={id}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                >
+                  {tech?.name}
+                  <button
+                    onClick={() => removeTech(id)}
+                    className="hover:text-blue-600"
+                  >
+                    &times;
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Search input */}
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search techs..."
+          className="w-full px-3 py-1.5 border rounded mb-2 text-sm"
+        />
+
+        {/* Checkbox list */}
+        <div className="max-h-40 overflow-y-auto border rounded p-1">
+          {filteredTechs.length === 0 ? (
+            <div className="text-sm text-gray-400 text-center py-2">No available techs</div>
+          ) : (
+            filteredTechs.map(tech => (
+              <label
+                key={tech.id}
+                className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={effectiveSelection.has(tech.id)}
+                  onChange={() => toggleTech(tech.id)}
+                  className="rounded border-gray-300"
+                />
+                {tech.name}
+              </label>
+            ))
+          )}
+        </div>
       </div>
 
       <div className="mb-4">
@@ -1357,12 +1754,12 @@ function PTOForm({
           Cancel
         </button>
         <button
-          onClick={() => onSubmit(techId, reason || null, timeBlock)}
-          disabled={!techId}
+          onClick={() => onSubmit([...effectiveSelection], reason || null, timeBlock)}
+          disabled={effectiveSelection.size === 0}
           className="px-4 py-2 rounded text-white font-medium disabled:opacity-50"
           style={{ backgroundColor: colors.teal }}
         >
-          Add PTO
+          Add PTO{effectiveSelection.size > 0 ? ` (${effectiveSelection.size} tech${effectiveSelection.size !== 1 ? 's' : ''})` : ''}
         </button>
       </div>
     </div>

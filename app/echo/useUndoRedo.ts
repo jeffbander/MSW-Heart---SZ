@@ -44,6 +44,17 @@ export type UndoableAction =
         timeBlock: 'AM' | 'PM'
       }>
       techName: string
+    }
+  | {
+      type: 'bulk_create_pto'
+      ptoEntries: Array<{
+        ptoId: string
+        techId: string
+        techName: string
+      }>
+      date: string
+      timeBlock: 'AM' | 'PM' | 'BOTH'
+      reason: string | null
     };
 
 const MAX_STACK = 50;

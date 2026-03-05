@@ -102,6 +102,8 @@ interface ScheduleGridProps {
   onQuickAssign?: (roomId: string, date: string, timeBlock: 'AM' | 'PM', techId: string) => void
   onBulkAssign?: (cells: CellId[], techId: string) => void
   onMoveAssignment?: (assignmentId: string, newRoomId: string, newDate: string, newTimeBlock: 'AM' | 'PM') => void
+  onFillCells?: (cells: CellId[], techId: string) => void
+  onPasteFill?: (entries: { roomId: string; date: string; timeBlock: 'AM' | 'PM'; techId: string }[]) => void
   collapsedCategories?: Set<string>
   onToggleCategory?: (category: string) => void
   onRoomReorder?: (category: string, roomIds: string[]) => void
@@ -457,6 +459,7 @@ function DroppableCell({
   onClick,
   isSelected,
   isFocused,
+  isFillTarget,
   tabIndex,
   onKeyDown,
 }: {
@@ -466,6 +469,7 @@ function DroppableCell({
   onClick?: () => void
   isSelected?: boolean
   isFocused?: boolean
+  isFillTarget?: boolean
   tabIndex?: number
   onKeyDown?: (e: React.KeyboardEvent) => void
 }) {
@@ -477,11 +481,13 @@ function DroppableCell({
   return (
     <td
       ref={setNodeRef}
+      data-cellkey={id}
       className={cn(
         className,
         isOver && "bg-blue-200/60 ring-2 ring-blue-400 ring-inset",
         isSelected && "ring-2 ring-blue-500 ring-inset bg-blue-50/60",
         isFocused && "ring-2 ring-[#003D7A] ring-inset",
+        isFillTarget && "bg-green-100/70 ring-2 ring-green-400 ring-inset",
       )}
       onClick={onClick}
       tabIndex={tabIndex}
@@ -596,6 +602,9 @@ function SortableRoomRow({
   onFocusCell,
   onKeyDown,
   isDragEnabled,
+  fillDragTargetKeys,
+  onFillMouseDown,
+  copiedCells,
 }: {
   room: RoomSchedule
   weekdayDates: WeekDate[]
@@ -618,6 +627,9 @@ function SortableRoomRow({
   onFocusCell: (key: string) => void
   onKeyDown: (e: React.KeyboardEvent, roomId: string, date: string, timeBlock: 'AM' | 'PM') => void
   isDragEnabled: boolean
+  fillDragTargetKeys: Set<string>
+  onFillMouseDown: (sourceKey: string, techId: string) => void
+  copiedCells: Set<string>
 }) {
   const {
     attributes,
@@ -698,18 +710,24 @@ function SortableRoomRow({
           assignments.filter(a => a.echo_room_id === room.id && a.date === day.fullDate && a.time_block === 'PM').map(a => a.echo_tech_id)
         )
 
+        // Get first tech ID for fill handle
+        const amFirstTechId = assignments.find(a => a.echo_room_id === room.id && a.date === day.fullDate && a.time_block === 'AM')?.echo_tech_id
+        const pmFirstTechId = assignments.find(a => a.echo_room_id === room.id && a.date === day.fullDate && a.time_block === 'PM')?.echo_tech_id
+
         return (
           <Fragment key={day.date}>
             <DroppableCell
               id={amKey}
               className={cn(
-                "py-2.5 px-2 text-center border-r border-slate-100 relative",
+                "py-2.5 px-2 text-center border-r border-slate-100 relative group/cell",
                 isBlockedHoliday ? "bg-[#EDE9FE]" : bgColor,
-                isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-blue-100/50"
+                isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-blue-100/50",
+                copiedCells.has(amKey) && "bg-green-100/70 ring-2 ring-green-400 ring-inset"
               )}
               onClick={() => isAdmin && !isBlockedHoliday && handleCellClick(room.id, day.fullDate, 'AM', amIsEmpty, { shiftKey: false } as React.MouseEvent)}
               isSelected={selectedCells.has(amKey)}
               isFocused={focusedCellKey === amKey}
+              isFillTarget={fillDragTargetKeys.has(amKey)}
               tabIndex={isAdmin ? 0 : undefined}
               onKeyDown={(e) => onKeyDown(e, room.id, day.fullDate, 'AM')}
             >
@@ -737,18 +755,31 @@ function SortableRoomRow({
                   />
                 )}
               </div>
+              {/* Fill handle */}
+              {isAdmin && !amIsEmpty && amFirstTechId && !isBlockedHoliday && (
+                <div
+                  className="absolute bottom-0 right-0 w-2 h-2 bg-blue-500 cursor-crosshair opacity-0 group-hover/cell:opacity-100 z-[3]"
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    onFillMouseDown(amKey, amFirstTechId)
+                  }}
+                />
+              )}
             </DroppableCell>
             <DroppableCell
               id={pmKey}
               className={cn(
-                "py-2.5 px-2 text-center relative",
+                "py-2.5 px-2 text-center relative group/cell",
                 isBlockedHoliday ? "bg-[#EDE9FE]" : bgColor,
                 dayIdx < weekdayDates.length - 1 || showWeekend ? "border-r border-slate-200" : "",
-                isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-blue-100/50"
+                isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-blue-100/50",
+                copiedCells.has(pmKey) && "bg-green-100/70 ring-2 ring-green-400 ring-inset"
               )}
               onClick={() => isAdmin && !isBlockedHoliday && handleCellClick(room.id, day.fullDate, 'PM', pmIsEmpty, { shiftKey: false } as React.MouseEvent)}
               isSelected={selectedCells.has(pmKey)}
               isFocused={focusedCellKey === pmKey}
+              isFillTarget={fillDragTargetKeys.has(pmKey)}
               tabIndex={isAdmin ? 0 : undefined}
               onKeyDown={(e) => onKeyDown(e, room.id, day.fullDate, 'PM')}
             >
@@ -775,6 +806,17 @@ function SortableRoomRow({
                   />
                 )}
               </div>
+              {/* Fill handle */}
+              {isAdmin && !pmIsEmpty && pmFirstTechId && !isBlockedHoliday && (
+                <div
+                  className="absolute bottom-0 right-0 w-2 h-2 bg-blue-500 cursor-crosshair opacity-0 group-hover/cell:opacity-100 z-[3]"
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    onFillMouseDown(pmKey, pmFirstTechId)
+                  }}
+                />
+              )}
             </DroppableCell>
           </Fragment>
         )
@@ -824,6 +866,9 @@ function LabSectionComponent({
   onFocusCell,
   onKeyDown,
   isDragEnabled,
+  fillDragTargetKeys,
+  onFillMouseDown,
+  copiedCells,
 }: {
   section: LabSection
   weekdayDates: WeekDate[]
@@ -848,6 +893,9 @@ function LabSectionComponent({
   onFocusCell: (key: string) => void
   onKeyDown: (e: React.KeyboardEvent, roomId: string, date: string, timeBlock: 'AM' | 'PM') => void
   isDragEnabled: boolean
+  fillDragTargetKeys: Set<string>
+  onFillMouseDown: (sourceKey: string, techId: string) => void
+  copiedCells: Set<string>
 }) {
   const [localExpanded, setLocalExpanded] = useState(section.isExpanded)
   const [rooms, setRooms] = useState(section.rooms)
@@ -900,6 +948,9 @@ function LabSectionComponent({
     onFocusCell,
     onKeyDown,
     isDragEnabled,
+    fillDragTargetKeys,
+    onFillMouseDown,
+    copiedCells,
   }
 
   return (
@@ -1231,6 +1282,8 @@ export function ScheduleGrid({
   onQuickAssign,
   onBulkAssign,
   onMoveAssignment,
+  onFillCells,
+  onPasteFill,
   collapsedCategories,
   onToggleCategory,
   onRoomReorder
@@ -1243,6 +1296,15 @@ export function ScheduleGrid({
   const [focusedCellKey, setFocusedCellKey] = useState<string | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [activeDragName, setActiveDragName] = useState<string | null>(null)
+
+  // Fill drag state (Feature: drag-to-fill)
+  const [fillDragSource, setFillDragSource] = useState<{ key: string; techId: string; roomId: string } | null>(null)
+  const [fillDragTargetKeys, setFillDragTargetKeys] = useState<Set<string>>(new Set())
+  const fillDragActiveRef = useRef(false)
+
+  // Copy/paste clipboard (Feature: copy & paste)
+  const clipboardRef = useRef<{ entries: { dateOffset: number; timeBlockOffset: number; roomOffset: number; techIds: string[] }[]; anchorRoomId: string; anchorDate: string; anchorTimeBlock: string; roomIds: string[] } | null>(null)
+  const [copiedCells, setCopiedCells] = useState<Set<string>>(new Set())
 
   // Transform the data
   const weekDates = useMemo(() => transformDates(dateRange, holidays), [dateRange, holidays])
@@ -1373,6 +1435,199 @@ export function ScheduleGrid({
       el?.focus()
     }
   }, [allCellKeys, weekdayDates.length, assignments, onQuickAssign, onCellClick, onQuickDelete])
+
+  // Fill drag handlers (Feature: drag-to-fill)
+  const handleFillMouseDown = useCallback((sourceKey: string, techId: string) => {
+    const parsed = parseCellKey(sourceKey)
+    if (!parsed) return
+    fillDragActiveRef.current = true
+    setFillDragSource({ key: sourceKey, techId, roomId: parsed.roomId })
+    setFillDragTargetKeys(new Set())
+  }, [])
+
+  useEffect(() => {
+    if (!onFillCells) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!fillDragActiveRef.current || !fillDragSource) return
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
+      const cellEl = el?.closest('[data-cellkey]') as HTMLElement | null
+      if (!cellEl) return
+      const hoverKey = cellEl.getAttribute('data-cellkey')
+      if (!hoverKey) return
+      const hoverParsed = parseCellKey(hoverKey)
+      if (!hoverParsed || hoverParsed.roomId !== fillDragSource.roomId) return
+
+      // Build all cell keys between source and hover in this room row
+      const roomCellKeys = allCellKeys.filter(k => k.startsWith(fillDragSource.roomId + '-'))
+      const sourceIdx = roomCellKeys.indexOf(fillDragSource.key)
+      const hoverIdx = roomCellKeys.indexOf(hoverKey)
+      if (sourceIdx === -1 || hoverIdx === -1) return
+
+      const start = Math.min(sourceIdx, hoverIdx)
+      const end = Math.max(sourceIdx, hoverIdx)
+      const targets = new Set<string>()
+      for (let i = start; i <= end; i++) {
+        if (roomCellKeys[i] !== fillDragSource.key) {
+          targets.add(roomCellKeys[i])
+        }
+      }
+      setFillDragTargetKeys(targets)
+    }
+
+    const handleMouseUp = () => {
+      if (!fillDragActiveRef.current || !fillDragSource) return
+      fillDragActiveRef.current = false
+
+      // Filter to empty cells only
+      const cellsToFill: CellId[] = []
+      fillDragTargetKeys.forEach(key => {
+        const parsed = parseCellKey(key)
+        if (!parsed) return
+        const hasAssignment = assignments.some(
+          a => a.echo_room_id === parsed.roomId && a.date === parsed.date && a.time_block === parsed.timeBlock
+        )
+        if (!hasAssignment) cellsToFill.push(parsed)
+      })
+
+      if (cellsToFill.length > 0) {
+        onFillCells(cellsToFill, fillDragSource.techId)
+      }
+
+      setFillDragSource(null)
+      setFillDragTargetKeys(new Set())
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [fillDragSource, fillDragTargetKeys, allCellKeys, assignments, onFillCells])
+
+  // Copy/paste handlers (Feature: copy & paste)
+  useEffect(() => {
+    if (!onPasteFill) return
+
+    const handler = (e: KeyboardEvent) => {
+      // Skip if focus is in an input or textarea
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      const isMod = e.metaKey || e.ctrlKey
+
+      // Ctrl+C: copy selected cells
+      if (isMod && e.key === 'c' && selectedCells.size > 0) {
+        e.preventDefault()
+        // Gather selected cell info
+        const selectedParsed = [...selectedCells].map(k => ({ key: k, ...parseCellKey(k)! })).filter(p => p.roomId)
+
+        if (selectedParsed.length === 0) return
+
+        // Build ordered unique room/date/timeBlock lists
+        const uniqueRoomIds = [...new Set(selectedParsed.map(p => p.roomId))]
+        const uniqueDates = [...new Set(selectedParsed.map(p => p.date))].sort()
+        const timeBlockOrder = ['AM', 'PM']
+
+        // Find anchor (top-left)
+        const anchorRoomId = uniqueRoomIds[0]
+        const anchorDate = uniqueDates[0]
+        const anchorTimeBlock = 'AM'
+
+        const entries: { dateOffset: number; timeBlockOffset: number; roomOffset: number; techIds: string[] }[] = []
+
+        for (const parsed of selectedParsed) {
+          const dateOffset = uniqueDates.indexOf(parsed.date) - uniqueDates.indexOf(anchorDate)
+          const timeBlockOffset = timeBlockOrder.indexOf(parsed.timeBlock) - timeBlockOrder.indexOf(anchorTimeBlock)
+          const roomOffset = uniqueRoomIds.indexOf(parsed.roomId) - uniqueRoomIds.indexOf(anchorRoomId)
+
+          // Get tech IDs in this cell
+          const cellAssignments = assignments.filter(
+            a => a.echo_room_id === parsed.roomId && a.date === parsed.date && a.time_block === parsed.timeBlock
+          )
+          const techIds = cellAssignments.map(a => a.echo_tech_id)
+
+          if (techIds.length > 0) {
+            entries.push({ dateOffset, timeBlockOffset, roomOffset, techIds })
+          }
+        }
+
+        clipboardRef.current = { entries, anchorRoomId, anchorDate, anchorTimeBlock, roomIds: uniqueRoomIds }
+
+        // Flash copied cells
+        setCopiedCells(new Set(selectedCells))
+        setTimeout(() => setCopiedCells(new Set()), 1000)
+
+        // Toast
+        const techCount = entries.reduce((sum, e) => sum + e.techIds.length, 0)
+        // Use a custom event to show toast since we don't have direct access here
+        document.dispatchEvent(new CustomEvent('schedule-toast', { detail: { message: `Copied ${entries.length} cell${entries.length !== 1 ? 's' : ''} (${techCount} assignment${techCount !== 1 ? 's' : ''})`, type: 'info' } }))
+      }
+
+      // Ctrl+V: paste
+      if (isMod && e.key === 'v' && clipboardRef.current) {
+        e.preventDefault()
+        const clipboard = clipboardRef.current
+        if (clipboard.entries.length === 0) return
+
+        // Determine anchor: focused cell or first selected cell
+        let anchorKey = focusedCellKey
+        if (!anchorKey && selectedCells.size > 0) {
+          anchorKey = [...selectedCells][0]
+        }
+        if (!anchorKey) return
+
+        const anchorParsed = parseCellKey(anchorKey)
+        if (!anchorParsed) return
+
+        // Build room order from current grid
+        const currentRoomIds: string[] = []
+        labSections.forEach(section => {
+          if (collapsedCategories?.has(section.name)) return
+          section.rooms.forEach(room => currentRoomIds.push(room.id))
+        })
+
+        const anchorRoomIdx = currentRoomIds.indexOf(anchorParsed.roomId)
+        const anchorDateIdx = weekdayDates.findIndex(d => d.fullDate === anchorParsed.date)
+        const anchorTBIdx = anchorParsed.timeBlock === 'AM' ? 0 : 1
+        if (anchorRoomIdx === -1 || anchorDateIdx === -1) return
+
+        const pasteEntries: { roomId: string; date: string; timeBlock: 'AM' | 'PM'; techId: string }[] = []
+
+        for (const entry of clipboard.entries) {
+          const targetRoomIdx = anchorRoomIdx + entry.roomOffset
+          const targetTBRaw = anchorTBIdx + entry.timeBlockOffset
+          const targetDateIdx = anchorDateIdx + Math.floor(targetTBRaw / 2) + entry.dateOffset
+          const targetTBIdx = ((targetTBRaw % 2) + 2) % 2
+
+          if (targetRoomIdx < 0 || targetRoomIdx >= currentRoomIds.length) continue
+          if (targetDateIdx < 0 || targetDateIdx >= weekdayDates.length) continue
+
+          const targetRoomId = currentRoomIds[targetRoomIdx]
+          const targetDate = weekdayDates[targetDateIdx].fullDate
+          const targetTimeBlock: 'AM' | 'PM' = targetTBIdx === 0 ? 'AM' : 'PM'
+
+          // Only paste into empty cells
+          const hasAssignment = assignments.some(
+            a => a.echo_room_id === targetRoomId && a.date === targetDate && a.time_block === targetTimeBlock
+          )
+          if (hasAssignment) continue
+
+          for (const techId of entry.techIds) {
+            pasteEntries.push({ roomId: targetRoomId, date: targetDate, timeBlock: targetTimeBlock, techId })
+          }
+        }
+
+        if (pasteEntries.length > 0) {
+          onPasteFill(pasteEntries)
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [selectedCells, focusedCellKey, assignments, weekdayDates, labSections, collapsedCategories, onPasteFill])
 
   // DnD - single top-level context for both room sort and assignment drag
   const sensors = useSensors(
@@ -1615,6 +1870,9 @@ export function ScheduleGrid({
                   onFocusCell={setFocusedCellKey}
                   onKeyDown={handleCellKeyDown}
                   isDragEnabled={isDragEnabled}
+                  fillDragTargetKeys={fillDragTargetKeys}
+                  onFillMouseDown={handleFillMouseDown}
+                  copiedCells={copiedCells}
                 />
               ))}
             </tbody>
