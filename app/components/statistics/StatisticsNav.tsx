@@ -7,6 +7,7 @@ const tabs = [
   { label: 'Practice Overview', href: '/statistics' },
   { label: 'Provider Scorecard', href: '/statistics/providers' },
   { label: 'Testing Analytics', href: '/statistics/testing' },
+  { label: 'Year-over-Year', href: '/statistics/year-over-year' },
 ];
 
 export default function StatisticsNav() {

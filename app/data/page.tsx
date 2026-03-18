@@ -127,11 +127,6 @@ function UploadZone({
 
       const data = await response.json();
 
-      if (response.status === 409) {
-        toast.error(data.message || 'Duplicate upload');
-        return;
-      }
-
       if (!response.ok) {
         throw new Error(data.details || data.error || 'Upload failed');
       }

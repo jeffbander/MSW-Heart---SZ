@@ -68,13 +68,10 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Check for existing upload for this type
-    const existing = await checkExistingUpload(reportType);
-    if (existing) return existing;
-
-    // Parse based on report type
+    // Parse based on report type FIRST (we need the records to determine month range)
     if (reportType === 'office_completed') {
       const result = await parseStatOfficeCompleted(buffer);
+      await deleteOverlappingMonths(reportType, 'stat_office_visits', result.records);
       const uploadRecord = await createUploadRecord(
         reportType, result.reportMonth, file.name, result.rowCount, userId
       );
@@ -88,6 +85,7 @@ export async function POST(request: NextRequest) {
 
     } else if (reportType === 'office_all_statuses') {
       const result = await parseStatOfficeAllStatuses(buffer);
+      await deleteOverlappingMonths(reportType, 'stat_office_visits', result.records);
       const uploadRecord = await createUploadRecord(
         reportType, result.reportMonth, file.name, result.rowCount, userId
       );
@@ -101,6 +99,7 @@ export async function POST(request: NextRequest) {
 
     } else if (reportType === 'testing_completed') {
       const result = await parseStatTestingCompleted(buffer);
+      await deleteOverlappingMonths(reportType, 'stat_testing_visits', result.records);
       const uploadRecord = await createUploadRecord(
         reportType, result.reportMonth, file.name, result.rowCount, userId
       );
@@ -113,6 +112,7 @@ export async function POST(request: NextRequest) {
 
     } else if (reportType === 'testing_all_statuses') {
       const result = await parseStatTestingAllStatuses(buffer);
+      await deleteOverlappingMonths(reportType, 'stat_testing_visits', result.records);
       const uploadRecord = await createUploadRecord(
         reportType, result.reportMonth, file.name, result.rowCount, userId
       );
@@ -126,6 +126,7 @@ export async function POST(request: NextRequest) {
     } else {
       // orders
       const result = parseStatOrders(arrayBuffer);
+      await deleteOverlappingMonths(reportType, 'stat_orders', result.records);
       const uploadRecord = await createUploadRecord(
         reportType, result.reportMonth, file.name, result.rowCount, userId
       );
@@ -151,30 +152,51 @@ export async function POST(request: NextRequest) {
 
 // ── Helpers ──
 
-async function checkExistingUpload(reportType: string) {
-  const { data: existingUpload } = await supabase
-    .from('stat_uploads')
-    .select('id, status, file_name')
-    .eq('report_type', reportType)
-    .eq('status', 'completed')
-    .limit(1)
-    .maybeSingle();
+type RecordWithVisitDate = { visitDate?: string | null; startDate?: string | null; orderDate?: string | null };
 
-  if (existingUpload) {
-    return NextResponse.json(
-      {
-        error: 'Duplicate upload',
-        message: `Data for ${reportType.replace(/_/g, ' ')} already exists (${existingUpload.file_name}). Delete the existing upload first.`,
-        existingUploadId: existingUpload.id,
-      },
-      { status: 409 }
-    );
+/**
+ * When re-uploading a report type, delete only the rows from existing uploads
+ * that fall within the month range covered by the new file. Months not present
+ * in the new file are preserved. Also cleans up any failed uploads for the type.
+ */
+async function deleteOverlappingMonths(
+  reportType: string,
+  table: 'stat_office_visits' | 'stat_testing_visits' | 'stat_orders',
+  records: RecordWithVisitDate[]
+) {
+  // Determine unique months in the new file
+  const monthSet = new Set<string>();
+  for (const r of records) {
+    const dateStr = r.visitDate || r.startDate || r.orderDate;
+    if (dateStr && dateStr.length >= 7) {
+      monthSet.add(dateStr.substring(0, 7) + '-01');
+    }
+  }
+
+  if (monthSet.size === 0) return;
+
+  const months = Array.from(monthSet);
+
+  // Find all existing completed uploads for this report type
+  const { data: existingUploads } = await supabase
+    .from('stat_uploads')
+    .select('id')
+    .eq('report_type', reportType)
+    .eq('status', 'completed');
+
+  if (existingUploads && existingUploads.length > 0) {
+    const existingIds = existingUploads.map((u: { id: number }) => u.id);
+
+    // Delete rows from the overlapping months only
+    await supabase
+      .from(table)
+      .delete()
+      .in('upload_id', existingIds)
+      .in('report_month', months);
   }
 
   // Clean up any failed uploads for this type
   await supabase.from('stat_uploads').delete().eq('report_type', reportType).eq('status', 'failed');
-
-  return null;
 }
 
 async function createUploadRecord(
