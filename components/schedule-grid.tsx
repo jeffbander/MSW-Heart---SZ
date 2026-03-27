@@ -521,7 +521,7 @@ function StaffCell({
   onQuickDelete?: (assignmentId: string) => void
   isDragEnabled?: boolean
 }) {
-  if (isWeekend || isBlockedHoliday) {
+  if (isBlockedHoliday) {
     return <span className="text-slate-400">-</span>
   }
 
@@ -821,19 +821,136 @@ function SortableRoomRow({
           </Fragment>
         )
       })}
-      {showWeekend && weekendDates.map((day, idx) => (
-        <Fragment key={day.date}>
-          <td className="py-2.5 px-2 text-center bg-slate-100/60 border-r border-slate-200/60">
-            <StaffCell staff={[]} ptoStaff={[]} isWeekend />
-          </td>
-          <td className={cn(
-            "py-2.5 px-2 text-center bg-slate-100/60",
-            idx < weekendDates.length - 1 ? "border-r border-slate-200" : ""
-          )}>
-            <StaffCell staff={[]} ptoStaff={[]} isWeekend />
-          </td>
-        </Fragment>
-      ))}
+      {showWeekend && weekendDates.map((day, dayIdx) => {
+        const slot = room.slots[day.date]
+        const amStaff = slot?.am || []
+        const pmStaff = slot?.pm || []
+        const amEntries = slot?.amEntries || []
+        const pmEntries = slot?.pmEntries || []
+        const ptoEntries = ptoData[day.date] || []
+        const amPtoStaff = ptoEntries.filter(e => e.timeBlock === 'AM' || e.timeBlock === 'BOTH').map(e => e.name)
+        const pmPtoStaff = ptoEntries.filter(e => e.timeBlock === 'PM' || e.timeBlock === 'BOTH').map(e => e.name)
+        const isBlockedHoliday = day.holiday?.block_assignments ?? false
+
+        const amKey = cellKey(room.id, day.fullDate, 'AM')
+        const pmKey = cellKey(room.id, day.fullDate, 'PM')
+        const amIsEmpty = amStaff.length === 0
+        const pmIsEmpty = pmStaff.length === 0
+
+        const amAssignedIds = new Set(
+          assignments.filter(a => a.echo_room_id === room.id && a.date === day.fullDate && a.time_block === 'AM').map(a => a.echo_tech_id)
+        )
+        const pmAssignedIds = new Set(
+          assignments.filter(a => a.echo_room_id === room.id && a.date === day.fullDate && a.time_block === 'PM').map(a => a.echo_tech_id)
+        )
+
+        const amFirstTechId = assignments.find(a => a.echo_room_id === room.id && a.date === day.fullDate && a.time_block === 'AM')?.echo_tech_id
+        const pmFirstTechId = assignments.find(a => a.echo_room_id === room.id && a.date === day.fullDate && a.time_block === 'PM')?.echo_tech_id
+
+        return (
+          <Fragment key={day.date}>
+            <DroppableCell
+              id={amKey}
+              className={cn(
+                "py-2.5 px-2 text-center border-r border-slate-100 relative group/cell",
+                isBlockedHoliday ? "bg-[#EDE9FE]" : bgColor,
+                isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-blue-100/50",
+                copiedCells.has(amKey) && "bg-green-100/70 ring-2 ring-green-400 ring-inset"
+              )}
+              onClick={() => isAdmin && !isBlockedHoliday && handleCellClick(room.id, day.fullDate, 'AM', amIsEmpty, { shiftKey: false } as React.MouseEvent)}
+              isSelected={selectedCells.has(amKey)}
+              isFocused={focusedCellKey === amKey}
+              isFillTarget={fillDragTargetKeys.has(amKey)}
+              tabIndex={isAdmin ? 0 : undefined}
+              onKeyDown={(e) => onKeyDown(e, room.id, day.fullDate, 'AM')}
+            >
+              <div
+                className="absolute inset-0 z-[1]"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (!isAdmin || isBlockedHoliday) return
+                  handleCellClick(room.id, day.fullDate, 'AM', amIsEmpty, e)
+                }}
+                onFocus={() => onFocusCell(amKey)}
+              />
+              <div className="relative z-[2] pointer-events-auto">
+                <StaffCell staff={amStaff} entries={amEntries} ptoStaff={amPtoStaff} isBlockedHoliday={isBlockedHoliday} isAdmin={isAdmin} onQuickDelete={onQuickDelete} isDragEnabled={isDragEnabled} />
+                {inlineAssignCell === amKey && (
+                  <InlineTechDropdown
+                    echoTechs={echoTechs}
+                    assignedTechIds={amAssignedIds}
+                    onSelect={(techId) => {
+                      onQuickAssign?.(room.id, day.fullDate, 'AM', techId)
+                      onSetInlineAssign(null)
+                    }}
+                    onClose={() => onSetInlineAssign(null)}
+                  />
+                )}
+              </div>
+              {isAdmin && !amIsEmpty && amFirstTechId && !isBlockedHoliday && (
+                <div
+                  className="absolute bottom-0 right-0 w-2 h-2 bg-blue-500 cursor-crosshair opacity-0 group-hover/cell:opacity-100 z-[3]"
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    onFillMouseDown(amKey, amFirstTechId)
+                  }}
+                />
+              )}
+            </DroppableCell>
+            <DroppableCell
+              id={pmKey}
+              className={cn(
+                "py-2.5 px-2 text-center relative group/cell",
+                isBlockedHoliday ? "bg-[#EDE9FE]" : bgColor,
+                dayIdx < weekendDates.length - 1 ? "border-r border-slate-200" : "",
+                isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-blue-100/50",
+                copiedCells.has(pmKey) && "bg-green-100/70 ring-2 ring-green-400 ring-inset"
+              )}
+              onClick={() => isAdmin && !isBlockedHoliday && handleCellClick(room.id, day.fullDate, 'PM', pmIsEmpty, { shiftKey: false } as React.MouseEvent)}
+              isSelected={selectedCells.has(pmKey)}
+              isFocused={focusedCellKey === pmKey}
+              isFillTarget={fillDragTargetKeys.has(pmKey)}
+              tabIndex={isAdmin ? 0 : undefined}
+              onKeyDown={(e) => onKeyDown(e, room.id, day.fullDate, 'PM')}
+            >
+              <div
+                className="absolute inset-0 z-[1]"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (!isAdmin || isBlockedHoliday) return
+                  handleCellClick(room.id, day.fullDate, 'PM', pmIsEmpty, e)
+                }}
+                onFocus={() => onFocusCell(pmKey)}
+              />
+              <div className="relative z-[2] pointer-events-auto">
+                <StaffCell staff={pmStaff} entries={pmEntries} ptoStaff={pmPtoStaff} isBlockedHoliday={isBlockedHoliday} isAdmin={isAdmin} onQuickDelete={onQuickDelete} isDragEnabled={isDragEnabled} />
+                {inlineAssignCell === pmKey && (
+                  <InlineTechDropdown
+                    echoTechs={echoTechs}
+                    assignedTechIds={pmAssignedIds}
+                    onSelect={(techId) => {
+                      onQuickAssign?.(room.id, day.fullDate, 'PM', techId)
+                      onSetInlineAssign(null)
+                    }}
+                    onClose={() => onSetInlineAssign(null)}
+                  />
+                )}
+              </div>
+              {isAdmin && !pmIsEmpty && pmFirstTechId && !isBlockedHoliday && (
+                <div
+                  className="absolute bottom-0 right-0 w-2 h-2 bg-blue-500 cursor-crosshair opacity-0 group-hover/cell:opacity-100 z-[3]"
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    onFillMouseDown(pmKey, pmFirstTechId)
+                  }}
+                />
+              )}
+            </DroppableCell>
+          </Fragment>
+        )
+      })}
     </tr>
   )
 }
@@ -1092,19 +1209,83 @@ function PTORow({
           </Fragment>
         )
       })}
-      {showWeekend && weekendDates.map((day, idx) => (
-        <Fragment key={day.date}>
-          <td className="py-3 px-2 text-center bg-slate-100/60 border-r border-slate-200/60">
-            <span className="text-slate-400">-</span>
-          </td>
-          <td className={cn(
-            "py-3 px-2 text-center bg-slate-100/60",
-            idx < weekendDates.length - 1 ? "border-r border-slate-200" : ""
-          )}>
-            <span className="text-slate-400">-</span>
-          </td>
-        </Fragment>
-      ))}
+      {showWeekend && weekendDates.map((day, idx) => {
+        const entries = ptoData[day.date] || []
+        const isBlockedHoliday = day.holiday?.block_assignments ?? false
+        const amStaff = entries.filter(e => e.timeBlock === 'AM' || e.timeBlock === 'BOTH')
+        const pmStaff = entries.filter(e => e.timeBlock === 'PM' || e.timeBlock === 'BOTH')
+        return (
+          <Fragment key={day.date}>
+            <td
+              className={cn(
+                "py-3 px-2 text-center border-r border-slate-100",
+                isBlockedHoliday ? "bg-[#EDE9FE]" : "",
+                isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-amber-100/50"
+              )}
+              onClick={() => isAdmin && !isBlockedHoliday && onPTOClick?.(day.fullDate, 'AM')}
+            >
+              {isBlockedHoliday ? (
+                <span className="text-slate-400">-</span>
+              ) : amStaff.length > 0 ? (
+                <div className="flex flex-wrap gap-x-1 justify-center text-[13px]">
+                  {amStaff.map((entry, i) => (
+                    <span key={entry.id} className="group/pto inline-flex items-center text-amber-700">
+                      {entry.name}
+                      {isAdmin && onPTODelete && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onPTODelete(entry.id)
+                          }}
+                          className="opacity-0 group-hover/pto:opacity-100 ml-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-600 transition-opacity"
+                          title="Remove PTO"
+                        >
+                          &times;
+                        </button>
+                      )}
+                      {i < amStaff.length - 1 && <span className="text-slate-400">,</span>}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </td>
+            <td
+              className={cn(
+                "py-3 px-2 text-center",
+                isBlockedHoliday ? "bg-[#EDE9FE]" : "",
+                idx < weekendDates.length - 1 ? "border-r border-slate-200" : "",
+                isAdmin && !isBlockedHoliday && "cursor-pointer hover:bg-amber-100/50"
+              )}
+              onClick={() => isAdmin && !isBlockedHoliday && onPTOClick?.(day.fullDate, 'PM')}
+            >
+              {isBlockedHoliday ? (
+                <span className="text-slate-400">-</span>
+              ) : pmStaff.length > 0 ? (
+                <div className="flex flex-wrap gap-x-1 justify-center text-[13px]">
+                  {pmStaff.map((entry, i) => (
+                    <span key={entry.id} className="group/pto inline-flex items-center text-amber-700">
+                      {entry.name}
+                      {isAdmin && onPTODelete && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onPTODelete(entry.id)
+                          }}
+                          className="opacity-0 group-hover/pto:opacity-100 ml-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-600 transition-opacity"
+                          title="Remove PTO"
+                        >
+                          &times;
+                        </button>
+                      )}
+                      {i < pmStaff.length - 1 && <span className="text-slate-400">,</span>}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </td>
+          </Fragment>
+        )
+      })}
     </tr>
   )
 }
@@ -1160,14 +1341,23 @@ function CapacityRows({
               </td>
             )
           })}
-          {showWeekend && weekendDates.map((day, dayIdx) => (
-            <td key={day.date} colSpan={2} className={cn(
-              "py-2.5 px-2 text-center bg-slate-100/60",
-              dayIdx < weekendDates.length - 1 ? "border-r border-slate-200" : ""
-            )}>
-              <span className="text-slate-400">-</span>
-            </td>
-          ))}
+          {showWeekend && weekendDates.map((day, dayIdx) => {
+            const dayData = capacityData.find(d => d.date === day.date)
+            const isBlockedHoliday = day.holiday?.block_assignments ?? false
+            const value = isBlockedHoliday ? "-" : (dayData ? dayData[type.key] : "-")
+            return (
+              <td key={day.date} colSpan={2} className={cn(
+                "py-2.5 px-2 text-center",
+                isBlockedHoliday ? "bg-[#EDE9FE]" : "",
+                dayIdx < weekendDates.length - 1 ? "border-r border-slate-200" : ""
+              )}>
+                <span className={cn(
+                  "text-lg font-bold",
+                  isBlockedHoliday ? "text-slate-400" : "text-[#003366]"
+                )}>{value}</span>
+              </td>
+            )
+          })}
         </tr>
       ))}
     </>
@@ -1325,19 +1515,21 @@ export function ScheduleGrid({
   const weekendDates = weekDates.filter((d) => d.isWeekend)
 
   // Build a flat list of all cell keys for keyboard navigation
+  // Includes weekend dates when showWeekend is true, in chronological order
   const allCellKeys = useMemo(() => {
     const keys: string[] = []
+    const visibleDates = showWeekend ? weekDates : weekdayDates
     labSections.forEach(section => {
       if (collapsedCategories?.has(section.name)) return
       section.rooms.forEach(room => {
-        weekdayDates.forEach(day => {
+        visibleDates.forEach(day => {
           keys.push(cellKey(room.id, day.fullDate, 'AM'))
           keys.push(cellKey(room.id, day.fullDate, 'PM'))
         })
       })
     })
     return keys
-  }, [labSections, weekdayDates, collapsedCategories])
+  }, [labSections, weekDates, weekdayDates, showWeekend, collapsedCategories])
 
   // Multi-cell select toggle
   const handleShiftClick = useCallback((key: string) => {
@@ -1370,8 +1562,9 @@ export function ScheduleGrid({
     const currentKey = cellKey(roomId, date, timeBlock)
     const currentIdx = allCellKeys.indexOf(currentKey)
 
-    // Number of AM/PM columns per row (weekdayDates.length * 2)
-    const colsPerRow = weekdayDates.length * 2
+    // Number of AM/PM columns per row (all visible dates * 2)
+    const visibleDateCount = showWeekend ? weekDates.length : weekdayDates.length
+    const colsPerRow = visibleDateCount * 2
 
     let targetIdx = -1
     switch (e.key) {
@@ -1434,7 +1627,7 @@ export function ScheduleGrid({
       const el = document.querySelector(`[data-cellkey="${targetKey}"]`) as HTMLElement
       el?.focus()
     }
-  }, [allCellKeys, weekdayDates.length, assignments, onQuickAssign, onCellClick, onQuickDelete])
+  }, [allCellKeys, weekDates.length, weekdayDates.length, showWeekend, assignments, onQuickAssign, onCellClick, onQuickDelete])
 
   // Fill drag handlers (Feature: drag-to-fill)
   const handleFillMouseDown = useCallback((sourceKey: string, techId: string) => {
@@ -1588,8 +1781,10 @@ export function ScheduleGrid({
           section.rooms.forEach(room => currentRoomIds.push(room.id))
         })
 
+        const visibleDates = showWeekend ? weekDates : weekdayDates
+
         const anchorRoomIdx = currentRoomIds.indexOf(anchorParsed.roomId)
-        const anchorDateIdx = weekdayDates.findIndex(d => d.fullDate === anchorParsed.date)
+        const anchorDateIdx = visibleDates.findIndex(d => d.fullDate === anchorParsed.date)
         const anchorTBIdx = anchorParsed.timeBlock === 'AM' ? 0 : 1
         if (anchorRoomIdx === -1 || anchorDateIdx === -1) return
 
@@ -1602,10 +1797,10 @@ export function ScheduleGrid({
           const targetTBIdx = ((targetTBRaw % 2) + 2) % 2
 
           if (targetRoomIdx < 0 || targetRoomIdx >= currentRoomIds.length) continue
-          if (targetDateIdx < 0 || targetDateIdx >= weekdayDates.length) continue
+          if (targetDateIdx < 0 || targetDateIdx >= visibleDates.length) continue
 
           const targetRoomId = currentRoomIds[targetRoomIdx]
-          const targetDate = weekdayDates[targetDateIdx].fullDate
+          const targetDate = visibleDates[targetDateIdx].fullDate
           const targetTimeBlock: 'AM' | 'PM' = targetTBIdx === 0 ? 'AM' : 'PM'
 
           // Only paste into empty cells
@@ -1627,7 +1822,7 @@ export function ScheduleGrid({
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selectedCells, focusedCellKey, assignments, weekdayDates, labSections, collapsedCategories, onPasteFill])
+  }, [selectedCells, focusedCellKey, assignments, weekDates, weekdayDates, showWeekend, labSections, collapsedCategories, onPasteFill])
 
   // DnD - single top-level context for both room sort and assignment drag
   const sensors = useSensors(
@@ -1733,19 +1928,34 @@ export function ScheduleGrid({
                     </th>
                   )
                 })}
-                {showWeekend && weekendDates.map((day, idx) => (
-                  <th
-                    key={day.date}
-                    colSpan={2}
-                    className={cn(
-                      "py-3 px-2 text-center bg-slate-100",
-                      idx < weekendDates.length - 1 ? "border-r border-slate-200" : ""
-                    )}
-                  >
-                    <div className="text-sm font-medium text-slate-400">{day.dayName}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">{day.date}</div>
-                  </th>
-                ))}
+                {showWeekend && weekendDates.map((day, idx) => {
+                  const hasHoliday = !!day.holiday
+                  const isBlockedHoliday = day.holiday?.block_assignments ?? false
+                  return (
+                    <th
+                      key={day.date}
+                      colSpan={2}
+                      className={cn(
+                        "py-3 px-2 text-center",
+                        isBlockedHoliday ? "bg-[#EDE9FE]" : "bg-slate-50",
+                        idx < weekendDates.length - 1 ? "border-r border-slate-200" : ""
+                      )}
+                    >
+                      <div className={cn(
+                        "text-sm font-bold",
+                        hasHoliday ? "text-[#7C3AED]" : "text-[#003366]"
+                      )}>
+                        {day.dayName}
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-medium mt-0.5">{day.date}</div>
+                      {hasHoliday && (
+                        <div className="text-[10px] text-[#7C3AED] font-medium mt-0.5 truncate max-w-[80px] mx-auto" title={day.holiday!.name}>
+                          {day.holiday!.name}
+                        </div>
+                      )}
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             {/* Capacity Rows */}
@@ -1788,18 +1998,31 @@ export function ScheduleGrid({
                     </th>
                   )
                 })}
-                {showWeekend && weekendDates.map((day, idx) => (
-                  <th
-                    key={day.date}
-                    colSpan={2}
-                    className={cn(
-                      "py-2.5 px-2 text-center text-sm font-medium bg-[#002244] text-slate-400",
-                      idx < weekendDates.length - 1 ? "border-r border-[#003355]" : ""
-                    )}
-                  >
-                    {day.dayName} {day.date}
-                  </th>
-                ))}
+                {showWeekend && weekendDates.map((day, idx) => {
+                  const hasHoliday = !!day.holiday
+                  const isBlockedHoliday = day.holiday?.block_assignments ?? false
+                  return (
+                    <th
+                      key={day.date}
+                      colSpan={2}
+                      className={cn(
+                        "py-2.5 px-2 text-center text-sm font-semibold",
+                        isBlockedHoliday ? "bg-[#7C3AED] text-violet-100" : "text-white",
+                        idx < weekendDates.length - 1 ? "border-r border-[#004080]" : ""
+                      )}
+                    >
+                      <div>{day.dayName} {day.date}</div>
+                      {hasHoliday && (
+                        <div className={cn(
+                          "text-[10px] font-medium mt-0.5 truncate max-w-[80px] mx-auto",
+                          isBlockedHoliday ? "text-violet-200" : "text-blue-200"
+                        )} title={day.holiday!.name}>
+                          {day.holiday!.name}
+                        </div>
+                      )}
+                    </th>
+                  )
+                })}
               </tr>
               <tr className="bg-[#004477]">
                 {weekdayDates.map((day, i) => {
@@ -1822,16 +2045,26 @@ export function ScheduleGrid({
                     </Fragment>
                   )
                 })}
-                {showWeekend && weekendDates.map((day, i) => (
-                  <Fragment key={day.date}>
-                    <th className="py-2 px-2 font-medium text-xs bg-[#002244] text-slate-500 border-r border-[#003355]/40">
-                      AM
-                    </th>
-                    <th className={cn("py-2 px-2 font-medium text-xs bg-[#002244] text-slate-500", i < weekendDates.length - 1 ? "border-r border-[#003355]" : "")}>
-                      PM
-                    </th>
-                  </Fragment>
-                ))}
+                {showWeekend && weekendDates.map((day, i) => {
+                  const isBlockedHoliday = day.holiday?.block_assignments ?? false
+                  return (
+                    <Fragment key={day.date}>
+                      <th className={cn(
+                        "py-2 px-2 font-semibold text-xs border-r border-[#003366]/40",
+                        isBlockedHoliday ? "bg-[#6D28D9] text-violet-100" : "text-blue-100"
+                      )}>
+                        AM
+                      </th>
+                      <th className={cn(
+                        "py-2 px-2 font-semibold text-xs",
+                        isBlockedHoliday ? "bg-[#6D28D9] text-violet-100" : "text-blue-100",
+                        i < weekendDates.length - 1 ? "border-r border-[#003366]" : ""
+                      )}>
+                        PM
+                      </th>
+                    </Fragment>
+                  )
+                })}
               </tr>
             </thead>
             <tbody>

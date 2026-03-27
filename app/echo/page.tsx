@@ -196,7 +196,7 @@ export default function EchoPage() {
       const [providersRes, servicesRes, assignmentsRes] = await Promise.all([
         fetch('/api/providers'),
         fetch('/api/services'),
-        fetch(`/api/assignments?startDate=${weekStartDate}&endDate=${weekEndDate}`),
+        fetch(`/api/assignments?startDate=${effectiveStartDate}&endDate=${effectiveEndDate}`),
       ]);
 
       if (providersRes.ok) setMainProviders(await providersRes.json());
@@ -213,7 +213,7 @@ export default function EchoPage() {
     if (activeTab === 'providers') {
       fetchProvidersData();
     }
-  }, [activeTab, weekStartDate, weekEndDate]);
+  }, [activeTab, effectiveStartDate, effectiveEndDate]);
 
   // Clear undo/redo stack when week/view/month changes
   useEffect(() => {
@@ -1302,7 +1302,6 @@ export default function EchoPage() {
                   onClick={() => {
                     if (viewMode !== 'month') {
                       setViewMode('month');
-                      setActiveTab('techs');
                       // Derive monthOffset from current weekOffset
                       const target = new Date(frozenToday);
                       target.setDate(target.getDate() + weekOffset * 7);
@@ -1347,15 +1346,13 @@ export default function EchoPage() {
               Techs
             </button>
             <button
-              onClick={() => viewMode === 'week' && setActiveTab('providers')}
-              disabled={viewMode === 'month'}
+              onClick={() => setActiveTab('providers')}
               className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'providers'
                   ? 'border-current text-[#003D7A]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } ${viewMode === 'month' ? 'opacity-40 cursor-not-allowed' : ''}`}
+              }`}
               style={activeTab === 'providers' ? { color: colors.primaryBlue } : undefined}
-              title={viewMode === 'month' ? 'Providers view is only available in week mode' : undefined}
             >
               Providers
             </button>
@@ -1444,6 +1441,31 @@ export default function EchoPage() {
             {providersLoading ? (
               <div className="bg-white rounded-lg shadow-sm p-4 text-center py-8 text-gray-500">
                 Loading providers schedule...
+              </div>
+            ) : viewMode === 'month' ? (
+              <div className="space-y-6">
+                {monthDateRanges.map((weekDates) => {
+                  const weekStart = new Date(weekDates[0] + 'T00:00:00');
+                  const weekLabel = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                  const weekAssignments = mainAssignments.filter(a => weekDates.includes(a.date));
+                  const weekHolidays = holidays.filter(h => weekDates.includes(h.date));
+                  return (
+                    <div key={weekDates[0]}>
+                      <h3 className="text-sm font-semibold mb-2 px-1" style={{ color: colors.primaryBlue }}>
+                        Week of {weekLabel}
+                      </h3>
+                      <ProvidersScheduleGrid
+                        weekDates={weekDates}
+                        assignments={weekAssignments}
+                        services={mainServices}
+                        providers={mainProviders}
+                        isAdmin={canManageTesting}
+                        onAssignmentChange={fetchProvidersData}
+                        holidays={weekHolidays}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <ProvidersScheduleGrid
