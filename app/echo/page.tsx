@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTemplate, Holiday, Provider, Service, ScheduleAssignment } from '@/lib/types';
+import { EchoTech, EchoRoom, EchoScheduleAssignment, EchoPTO, EchoScheduleTemplate, Holiday, Provider, Service, ScheduleAssignment, DayMetadata } from '@/lib/types';
 import { ScheduleGrid } from '@/components/schedule-grid';
 import EchoAssignmentModal from '@/app/components/EchoAssignmentModal';
+import DayNoteModal from '@/app/components/DayNoteModal';
 import ProvidersScheduleGrid from '@/app/components/ProvidersScheduleGrid';
 import { useAuth } from '@/app/contexts/AuthContext';
 import { useToast } from '@/app/contexts/ToastContext';
@@ -67,6 +68,11 @@ export default function EchoPage() {
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
   const [showApplyTemplateModal, setShowApplyTemplateModal] = useState(false);
+
+  // Day note state
+  const [dayMetadata, setDayMetadata] = useState<DayMetadata[]>([]);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [selectedNoteDate, setSelectedNoteDate] = useState<string>('');
 
   // Collapsed sections state (Fourth Floor Lab hidden by default)
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => {
@@ -165,12 +171,13 @@ export default function EchoPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [techsRes, roomsRes, assignmentsRes, ptoRes, holidaysRes] = await Promise.all([
+      const [techsRes, roomsRes, assignmentsRes, ptoRes, holidaysRes, metadataRes] = await Promise.all([
         fetch('/api/echo-techs'),
         fetch('/api/echo-rooms'),
         fetch(`/api/echo-schedule?startDate=${effectiveStartDate}&endDate=${effectiveEndDate}`),
         fetch(`/api/echo-pto?startDate=${effectiveStartDate}&endDate=${effectiveEndDate}`),
-        fetch(`/api/holidays?startDate=${effectiveStartDate}&endDate=${effectiveEndDate}`)
+        fetch(`/api/holidays?startDate=${effectiveStartDate}&endDate=${effectiveEndDate}`),
+        fetch(`/api/day-metadata?startDate=${effectiveStartDate}&endDate=${effectiveEndDate}`)
       ]);
 
       if (techsRes.ok) setEchoTechs(await techsRes.json());
@@ -178,6 +185,7 @@ export default function EchoPage() {
       if (assignmentsRes.ok) setAssignments(await assignmentsRes.json());
       if (ptoRes.ok) setPtoDays(await ptoRes.json());
       if (holidaysRes.ok) setHolidays(await holidaysRes.json());
+      if (metadataRes.ok) setDayMetadata(await metadataRes.json());
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -255,6 +263,38 @@ export default function EchoPage() {
     const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
     return `${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', options)}, ${start.getFullYear()}`;
   };
+
+  // Day notes map (date -> note text) for Techs tab
+  const dayNotesMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const m of dayMetadata) {
+      if (m.time_block === 'DAY' && m.day_note) {
+        map[m.date] = m.day_note;
+      }
+    }
+    return map;
+  }, [dayMetadata]);
+
+  const handleDateClick = useCallback((date: string) => {
+    setSelectedNoteDate(date);
+    setShowNoteModal(true);
+  }, []);
+
+  const handleSaveDayNote = useCallback(async (date: string, note: string) => {
+    const res = await fetch('/api/day-metadata', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, time_block: 'DAY', day_note: note || null }),
+    });
+    if (!res.ok) throw new Error('Failed to save day note');
+    const saved: DayMetadata = await res.json();
+    setDayMetadata(prev => {
+      const filtered = prev.filter(m => !(m.date === date && m.time_block === 'DAY'));
+      if (saved.day_note) filtered.push(saved);
+      return filtered;
+    });
+    toast.success(note ? 'Day note saved' : 'Day note removed');
+  }, [toast]);
 
   // Handle cell click
   const handleCellClick = (roomId: string, date: string, timeBlock: 'AM' | 'PM') => {
@@ -1404,6 +1444,8 @@ export default function EchoPage() {
                         collapsedCategories={collapsedCategories}
                         onToggleCategory={toggleCategory}
                         onRoomReorder={handleRoomReorder}
+                        dayNotes={dayNotesMap}
+                        onDateClick={handleDateClick}
                       />
                     </div>
                   );
@@ -1433,6 +1475,8 @@ export default function EchoPage() {
                 collapsedCategories={collapsedCategories}
                 onToggleCategory={toggleCategory}
                 onRoomReorder={handleRoomReorder}
+                dayNotes={dayNotesMap}
+                onDateClick={handleDateClick}
               />
             )}
           </div>
@@ -1571,6 +1615,16 @@ export default function EchoPage() {
             />
           </div>
         </div>
+      )}
+
+      {/* Day Note Modal */}
+      {showNoteModal && (
+        <DayNoteModal
+          date={selectedNoteDate}
+          existingNote={dayNotesMap[selectedNoteDate] || null}
+          onSave={handleSaveDayNote}
+          onClose={() => setShowNoteModal(false)}
+        />
       )}
 
       {/* Close dropdown when clicking outside */}

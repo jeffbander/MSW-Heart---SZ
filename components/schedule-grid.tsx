@@ -107,6 +107,8 @@ interface ScheduleGridProps {
   collapsedCategories?: Set<string>
   onToggleCategory?: (category: string) => void
   onRoomReorder?: (category: string, roomIds: string[]) => void
+  dayNotes?: Record<string, string>
+  onDateClick?: (date: string) => void
 }
 
 // ============================================
@@ -1476,7 +1478,9 @@ export function ScheduleGrid({
   onPasteFill,
   collapsedCategories,
   onToggleCategory,
-  onRoomReorder
+  onRoomReorder,
+  dayNotes,
+  onDateClick
 }: ScheduleGridProps) {
   const [showWeekend, setShowWeekend] = useState(false)
 
@@ -1903,6 +1907,7 @@ export function ScheduleGrid({
                 {weekdayDates.map((day, idx) => {
                   const hasHoliday = !!day.holiday
                   const isBlockedHoliday = day.holiday?.block_assignments ?? false
+                  const hasNote = !!dayNotes?.[day.fullDate]
                   return (
                     <th
                       key={day.date}
@@ -1910,8 +1915,10 @@ export function ScheduleGrid({
                       className={cn(
                         "py-3 px-2 text-center",
                         isBlockedHoliday ? "bg-[#EDE9FE]" : "bg-slate-50",
-                        idx < weekdayDates.length - 1 || showWeekend ? "border-r border-slate-200" : ""
+                        idx < weekdayDates.length - 1 || showWeekend ? "border-r border-slate-200" : "",
+                        onDateClick ? "cursor-pointer hover:bg-slate-100" : ""
                       )}
+                      onClick={() => onDateClick?.(day.fullDate)}
                     >
                       <div className={cn(
                         "text-sm font-bold",
@@ -1925,12 +1932,19 @@ export function ScheduleGrid({
                           {day.holiday!.name}
                         </div>
                       )}
+                      {hasNote && (
+                        <div className="flex items-center justify-center gap-1 mt-0.5" title={dayNotes![day.fullDate]}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
+                          <span className="text-[10px] text-blue-600 font-medium">Note</span>
+                        </div>
+                      )}
                     </th>
                   )
                 })}
                 {showWeekend && weekendDates.map((day, idx) => {
                   const hasHoliday = !!day.holiday
                   const isBlockedHoliday = day.holiday?.block_assignments ?? false
+                  const hasNote = !!dayNotes?.[day.fullDate]
                   return (
                     <th
                       key={day.date}
@@ -1938,8 +1952,10 @@ export function ScheduleGrid({
                       className={cn(
                         "py-3 px-2 text-center",
                         isBlockedHoliday ? "bg-[#EDE9FE]" : "bg-slate-50",
-                        idx < weekendDates.length - 1 ? "border-r border-slate-200" : ""
+                        idx < weekendDates.length - 1 ? "border-r border-slate-200" : "",
+                        onDateClick ? "cursor-pointer hover:bg-slate-100" : ""
                       )}
+                      onClick={() => onDateClick?.(day.fullDate)}
                     >
                       <div className={cn(
                         "text-sm font-bold",
@@ -1951,6 +1967,12 @@ export function ScheduleGrid({
                       {hasHoliday && (
                         <div className="text-[10px] text-[#7C3AED] font-medium mt-0.5 truncate max-w-[80px] mx-auto" title={day.holiday!.name}>
                           {day.holiday!.name}
+                        </div>
+                      )}
+                      {hasNote && (
+                        <div className="flex items-center justify-center gap-1 mt-0.5" title={dayNotes![day.fullDate]}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
+                          <span className="text-[10px] text-blue-600 font-medium">Note</span>
                         </div>
                       )}
                     </th>
@@ -1976,6 +1998,7 @@ export function ScheduleGrid({
                 {weekdayDates.map((day, idx) => {
                   const hasHoliday = !!day.holiday
                   const isBlockedHoliday = day.holiday?.block_assignments ?? false
+                  const hasNote = !!dayNotes?.[day.fullDate]
                   return (
                     <th
                       key={day.date}
@@ -1983,8 +2006,10 @@ export function ScheduleGrid({
                       className={cn(
                         "py-2.5 px-2 text-center text-sm font-semibold",
                         isBlockedHoliday ? "bg-[#7C3AED] text-violet-100" : "text-white",
-                        idx < weekdayDates.length - 1 || showWeekend ? "border-r border-[#004080]" : ""
+                        idx < weekdayDates.length - 1 || showWeekend ? "border-r border-[#004080]" : "",
+                        onDateClick ? "cursor-pointer hover:brightness-110" : ""
                       )}
+                      onClick={() => onDateClick?.(day.fullDate)}
                     >
                       <div>{day.dayName} {day.date}</div>
                       {hasHoliday && (
@@ -1995,12 +2020,19 @@ export function ScheduleGrid({
                           {day.holiday!.name}
                         </div>
                       )}
+                      {hasNote && (
+                        <div className="flex items-center justify-center gap-1 mt-0.5" title={dayNotes![day.fullDate]}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-300 inline-block" />
+                          <span className="text-[10px] text-blue-200 font-medium">Note</span>
+                        </div>
+                      )}
                     </th>
                   )
                 })}
                 {showWeekend && weekendDates.map((day, idx) => {
                   const hasHoliday = !!day.holiday
                   const isBlockedHoliday = day.holiday?.block_assignments ?? false
+                  const hasNote = !!dayNotes?.[day.fullDate]
                   return (
                     <th
                       key={day.date}
@@ -2008,8 +2040,10 @@ export function ScheduleGrid({
                       className={cn(
                         "py-2.5 px-2 text-center text-sm font-semibold",
                         isBlockedHoliday ? "bg-[#7C3AED] text-violet-100" : "text-white",
-                        idx < weekendDates.length - 1 ? "border-r border-[#004080]" : ""
+                        idx < weekendDates.length - 1 ? "border-r border-[#004080]" : "",
+                        onDateClick ? "cursor-pointer hover:brightness-110" : ""
                       )}
+                      onClick={() => onDateClick?.(day.fullDate)}
                     >
                       <div>{day.dayName} {day.date}</div>
                       {hasHoliday && (
@@ -2018,6 +2052,12 @@ export function ScheduleGrid({
                           isBlockedHoliday ? "text-violet-200" : "text-blue-200"
                         )} title={day.holiday!.name}>
                           {day.holiday!.name}
+                        </div>
+                      )}
+                      {hasNote && (
+                        <div className="flex items-center justify-center gap-1 mt-0.5" title={dayNotes![day.fullDate]}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-300 inline-block" />
+                          <span className="text-[10px] text-blue-200 font-medium">Note</span>
                         </div>
                       )}
                     </th>
