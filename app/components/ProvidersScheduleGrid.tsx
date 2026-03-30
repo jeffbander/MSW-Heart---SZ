@@ -293,113 +293,98 @@ export default function ProvidersScheduleGrid({
         ) || null;
       };
 
-      // Compact cell styles for single-page fit
+      // Cell style helper
       const cellStyle = (bg: string, color: string) =>
-        `border:1px solid #ccc;padding:2px 3px;text-align:center;font-size:9px;font-weight:500;background:${bg};color:${color};`;
+        `border:1px solid #D1D5DB;padding:3px 4px;text-align:center;font-size:13px;font-weight:700;background:${bg};color:${color};`;
 
-      const buildDataCell = (row: ServiceRow, date: string, timeBlock: 'AM' | 'PM') => {
+      // Build a single merged cell per day (no AM/PM sub-columns)
+      const buildDayCell = (row: ServiceRow, date: string) => {
         const holiday = mHolidayMap.get(date);
         if (holiday) {
           return `<td style="${cellStyle('#EDE9FE', '#7C3AED')}">HOL</td>`;
         }
-        const service = timeBlock === 'AM' ? row.amService : row.pmService;
-        if (!service) {
-          return `<td style="${cellStyle('white', '#D1D5DB')}">--</td>`;
+        if (row.isFullDay) {
+          const service = row.amService;
+          if (!service) return `<td style="${cellStyle('white', '#D1D5DB')}"></td>`;
+          const assignment = findAssignment(service.id, date, 'AM', service.time_block) || findAssignment(service.id, date, 'PM', service.time_block);
+          const name = assignment?.provider?.name ? getLastName(assignment.provider.name) : '';
+          return `<td style="${cellStyle(name ? '#F0F7FF' : 'white', name ? '#003D7A' : '#D1D5DB')}">${name}</td>`;
         }
-        const assignment = findAssignment(service.id, date, timeBlock, service.time_block);
-        const name = assignment?.provider?.name ? getLastName(assignment.provider.name) : '--';
-        const color = name !== '--' ? '#003D7A' : '#D1D5DB';
-        const bg = name !== '--' ? 'rgba(0,120,200,0.06)' : 'white';
-        return `<td style="${cellStyle(bg, color)}">${name}</td>`;
+        // AM/PM split — show both in one cell
+        const amService = row.amService;
+        const pmService = row.pmService;
+        const amAssignment = amService ? findAssignment(amService.id, date, 'AM', amService.time_block) : null;
+        const pmAssignment = pmService ? findAssignment(pmService.id, date, 'PM', pmService.time_block) : null;
+        const amName = amAssignment?.provider?.name ? getLastName(amAssignment.provider.name) : '';
+        const pmName = pmAssignment?.provider?.name ? getLastName(pmAssignment.provider.name) : '';
+
+        if (amName === pmName && amName) {
+          return `<td style="${cellStyle('#F0F7FF', '#003D7A')}">${amName}</td>`;
+        }
+        const hasSome = amName || pmName;
+        let content = '';
+        if (amName && pmName) {
+          content = `<span style="font-size:12px;">${amName} / ${pmName}</span>`;
+        } else if (amName) {
+          content = `${amName} <span style="font-size:9px;color:#9CA3AF;">AM</span>`;
+        } else if (pmName) {
+          content = `${pmName} <span style="font-size:9px;color:#9CA3AF;">PM</span>`;
+        }
+        return `<td style="${cellStyle(hasSome ? '#F0F7FF' : 'white', hasSome ? '#003D7A' : '#D1D5DB')}">${content}</td>`;
       };
 
-      const buildFullDayCell = (row: ServiceRow, date: string) => {
-        const holiday = mHolidayMap.get(date);
-        if (holiday) {
-          return `<td colspan="2" style="${cellStyle('#EDE9FE', '#7C3AED')}">HOL</td>`;
-        }
-        const service = row.amService;
-        if (!service) {
-          return `<td colspan="2" style="${cellStyle('white', '#D1D5DB')}">--</td>`;
-        }
-        const assignment = findAssignment(service.id, date, 'AM', service.time_block) || findAssignment(service.id, date, 'PM', service.time_block);
-        const name = assignment?.provider?.name ? getLastName(assignment.provider.name) : '--';
-        const color = name !== '--' ? '#003D7A' : '#D1D5DB';
-        const bg = name !== '--' ? 'rgba(0,120,200,0.06)' : 'white';
-        return `<td colspan="2" style="${cellStyle(bg, color)}">${name}</td>`;
-      };
-
-      // Create off-screen container — compact width
+      // Create off-screen container
       const container = document.createElement('div');
-      container.style.cssText = 'position:absolute;left:-9999px;top:0;background:white;padding:12px;width:1000px;';
+      container.style.cssText = 'position:absolute;left:-9999px;top:0;background:white;padding:10px 14px;width:1100px;';
       document.body.appendChild(container);
 
-      // Compact title
-      let html = `<div style="color:#003D7A;font-size:14px;font-weight:bold;margin-bottom:8px;font-family:system-ui,sans-serif;">
+      // Title
+      let html = `<div style="color:#003D7A;font-size:16px;font-weight:bold;margin-bottom:8px;font-family:system-ui,sans-serif;">
         Testing Providers Schedule &mdash; ${monthName} ${year}
       </div>`;
 
-      // Build a compact table for each week
-      for (const weekDays of weeks) {
-        const wStart = formatDayHeader(weekDays[0]);
-        const wEnd = formatDayHeader(weekDays[4]);
+      // Single table with all weeks — week label as a header row, no repeated column headers
+      html += `<table style="width:100%;border-collapse:collapse;font-family:system-ui,sans-serif;">`;
 
-        html += `<div style="margin-bottom:8px;">
-          <div style="color:#003D7A;font-size:10px;font-weight:600;margin-bottom:3px;font-family:system-ui,sans-serif;">
-            Week of ${wStart.dateLabel} &ndash; ${wEnd.dateLabel}
-          </div>
-          <table style="width:100%;border-collapse:collapse;font-size:9px;font-family:system-ui,sans-serif;">
-            <thead>
-              <tr>
-                <th style="border:1px solid #ccc;padding:2px 3px;text-align:left;color:#003D7A;font-weight:600;background:white;font-size:9px;">Service</th>`;
+      for (let wi = 0; wi < weeks.length; wi++) {
+        const weekDays = weeks[wi];
 
-        // Date headers — single row with day + date + holiday
+        // Week header row with dates
+        html += `<tr>`;
+        html += `<td style="border:1px solid #003D7A;padding:3px 4px;text-align:left;color:white;font-weight:700;background:#003D7A;font-size:10px;">Service</td>`;
         for (const date of weekDays) {
           const { dayName, dateLabel } = formatDayHeader(date);
           const hol = mHolidayMap.get(date);
-          const bg = hol ? '#EDE9FE' : 'white';
-          const clr = hol ? '#7C3AED' : '#003D7A';
-          html += `<th colspan="2" style="border:1px solid #ccc;padding:2px 3px;text-align:center;color:${clr};font-weight:600;background:${bg};font-size:9px;">
-            ${dayName} ${dateLabel}${hol ? ` <span style="font-weight:normal;font-size:8px;">(${hol.name})</span>` : ''}
-          </th>`;
+          const bg = hol ? '#7C3AED' : '#003D7A';
+          const clr = hol ? '#EDE9FE' : 'white';
+          html += `<td style="border:1px solid #003D7A;padding:3px 4px;text-align:center;color:${clr};font-weight:700;background:${bg};font-size:11px;">
+            ${dayName} ${dateLabel}${hol ? ` <span style="font-weight:normal;font-size:9px;">(${hol.name})</span>` : ''}
+          </td>`;
         }
-
-        html += `</tr><tr>
-          <th style="border:1px solid #ccc;padding:1px 3px;background:white;font-size:8px;"></th>`;
-
-        // AM/PM sub-headers
-        for (const date of weekDays) {
-          const hol = mHolidayMap.get(date);
-          const bg = hol ? '#EDE9FE' : 'white';
-          const clr = hol ? '#7C3AED' : '#6B7280';
-          html += `<th style="border:1px solid #ccc;padding:1px 3px;text-align:center;font-size:8px;font-weight:500;color:${clr};background:${bg};">AM</th>`;
-          html += `<th style="border:1px solid #ccc;padding:1px 3px;text-align:center;font-size:8px;font-weight:500;color:${clr};background:${bg};">PM</th>`;
-        }
-
-        html += `</tr></thead><tbody>`;
+        html += `</tr>`;
 
         // Service rows per category
         for (const cat of allCategories) {
-          html += `<tr><td colspan="${1 + weekDays.length * 2}" style="border:1px solid #ccc;padding:2px 3px;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;background:rgba(0,61,122,0.06);color:#003D7A;">${cat.header}</td></tr>`;
+          html += `<tr><td colspan="${1 + weekDays.length}" style="border:1px solid #D1D5DB;padding:1px 4px;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;background:#E8EDF2;color:#003D7A;">${cat.header}</td></tr>`;
 
           for (const row of cat.rows) {
             html += `<tr>`;
-            html += `<td style="border:1px solid #ccc;padding:2px 3px;font-size:9px;font-weight:500;color:#003D7A;white-space:nowrap;background:white;">${row.label}</td>`;
+            html += `<td style="border:1px solid #D1D5DB;padding:2px 4px;font-size:10px;font-weight:600;color:#003D7A;white-space:nowrap;background:white;">${row.label}</td>`;
 
             for (const date of weekDays) {
-              if (row.isFullDay) {
-                html += buildFullDayCell(row, date);
-              } else {
-                html += buildDataCell(row, date, 'AM');
-                html += buildDataCell(row, date, 'PM');
-              }
+              html += buildDayCell(row, date);
             }
             html += `</tr>`;
           }
         }
 
-        html += `</tbody></table></div>`;
+        // Small gap between weeks via a spacer row (except after last week)
+        if (wi < weeks.length - 1) {
+          html += `<tr><td colspan="${1 + weekDays.length}" style="border:none;padding:3px 0;background:white;"></td></tr>`;
+        }
       }
+
+      html += `</table>`;
 
       container.innerHTML = html;
 
