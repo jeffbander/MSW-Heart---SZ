@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { requireTestingAccess, isAuthError } from '@/lib/auth';
+import { logAudit } from '@/lib/auditLog';
 
 // GET /api/echo-pto - Get PTO entries for date range
 export async function GET(request: Request) {
@@ -75,6 +76,10 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
+    logAudit(authResult, 'create', 'echo_pto', data.id, {
+      date, echo_tech_id, time_block, echo_tech_name: data.echo_tech?.name,
+    });
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error creating echo PTO:', error);
@@ -112,6 +117,10 @@ export async function PUT(request: NextRequest) {
 
     if (error) throw error;
 
+    logAudit(authResult, 'update', 'echo_pto', id, {
+      ...updates, echo_tech_name: data.echo_tech?.name,
+    });
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error updating echo PTO:', error);
@@ -143,6 +152,8 @@ export async function DELETE(request: NextRequest) {
       .eq('id', id);
 
     if (error) throw error;
+
+    logAudit(authResult, 'delete', 'echo_pto', id, {});
 
     return NextResponse.json({ success: true });
   } catch (error) {

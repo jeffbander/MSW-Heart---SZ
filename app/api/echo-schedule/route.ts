@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { requireTestingAccess, isAuthError } from '@/lib/auth';
+import { logAudit } from '@/lib/auditLog';
 
 // GET /api/echo-schedule - Get assignments for date range
 export async function GET(request: Request) {
@@ -78,6 +79,11 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
+    logAudit(authResult, 'create', 'echo_assignment', data.id, {
+      date, echo_tech_id, echo_room_id, time_block,
+      echo_tech_name: data.echo_tech?.name, echo_room_name: data.echo_room?.name,
+    });
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error creating echo assignment:', error);
@@ -116,6 +122,11 @@ export async function PUT(request: NextRequest) {
 
     if (error) throw error;
 
+    logAudit(authResult, 'update', 'echo_assignment', id, {
+      ...updates,
+      echo_tech_name: data.echo_tech?.name, echo_room_name: data.echo_room?.name,
+    });
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error updating echo assignment:', error);
@@ -147,6 +158,8 @@ export async function DELETE(request: NextRequest) {
       .eq('id', id);
 
     if (error) throw error;
+
+    logAudit(authResult, 'delete', 'echo_assignment', id, {});
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,9 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { isHoliday, isInpatientService } from '@/lib/holidays';
 import { checkProviderAvailability } from '@/lib/availability';
 import { cascadePTODeletion } from '@/lib/ptoCascade';
 import { createPTORequestAndLeave } from '@/lib/ptoScheduleAssignments';
+import { getAuthUser } from '@/lib/auth';
+import { logAudit } from '@/lib/auditLog';
 
 export async function GET(request: Request) {
   try {
@@ -48,8 +50,9 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const authUser = await getAuthUser(request);
     const body = await request.json();
     console.log('Creating assignment with body:', JSON.stringify(body, null, 2));
 
@@ -160,6 +163,14 @@ export async function POST(request: Request) {
       }
     }
 
+    if (authUser) {
+      const firstRow = Array.isArray(data) ? data[0] : data;
+      logAudit(authUser, 'create', 'assignment', firstRow?.id ?? null, {
+        date: body.date, provider_id: body.provider_id, service_id: body.service_id,
+        time_block: body.time_block, is_pto: body.is_pto,
+      });
+    }
+
     console.log('Created assignment result:', JSON.stringify(data, null, 2));
     if (hasWorkOverlap) {
       return NextResponse.json({ ...data, warning: 'Provider has work assignments that overlap with this PTO' });
@@ -174,8 +185,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
   try {
+    const authUser = await getAuthUser(request);
     const body = await request.json();
     const { id, ...updates } = body;
 
@@ -198,6 +210,11 @@ export async function PUT(request: Request) {
       .single();
 
     if (error) throw error;
+
+    if (authUser) {
+      logAudit(authUser, 'update', 'assignment', id, updates);
+    }
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error updating assignment:', error);
@@ -242,8 +259,9 @@ export async function PATCH(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
   try {
+    const authUser = await getAuthUser(request);
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
@@ -275,6 +293,12 @@ export async function DELETE(request: Request) {
     // If this was a PTO assignment, cascade-delete related records
     if (wasPTO && assignment) {
       await cascadePTODeletion(assignment.provider_id, assignment.date);
+    }
+
+    if (authUser) {
+      logAudit(authUser, 'delete', 'assignment', id, {
+        provider_id: assignment?.provider_id, date: assignment?.date, was_pto: wasPTO,
+      });
     }
 
     return NextResponse.json({ success: true, was_pto: wasPTO });

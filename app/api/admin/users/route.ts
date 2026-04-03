@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { supabase } from '@/lib/supabase';
 import { requireRole, isAuthError } from '@/lib/auth';
+import { logAudit } from '@/lib/auditLog';
 
 // GET - List all users
 export async function GET(request: NextRequest) {
@@ -78,6 +79,10 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
+    logAudit(authResult, 'create', 'user', data.id, {
+      username: data.username, display_name: data.display_name, role: data.role,
+    });
+
     return NextResponse.json(data, { status: 201 });
   } catch (error) {
     console.error('Error creating user:', error);
@@ -126,6 +131,11 @@ export async function PUT(request: NextRequest) {
 
     if (error) throw error;
 
+    logAudit(authResult, 'update', 'user', id, {
+      display_name: data.display_name, username: data.username,
+      ...(updates.role ? { role_to: updates.role } : {}),
+    });
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error updating user:', error);
@@ -170,6 +180,8 @@ export async function DELETE(request: NextRequest) {
       .eq('id', id);
 
     if (error) throw error;
+
+    logAudit(authResult, 'delete', 'user', id, {});
 
     return NextResponse.json({ success: true });
   } catch (error) {

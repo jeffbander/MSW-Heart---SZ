@@ -1,5 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { getAuthUser } from '@/lib/auth';
+import { logAudit } from '@/lib/auditLog';
 
 export async function GET() {
   try {
@@ -20,8 +22,9 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const authUser = await getAuthUser(request);
     const body = await request.json();
     const { name, initials, role, default_room_count, capabilities } = body;
 
@@ -45,6 +48,11 @@ export async function POST(request: Request) {
       .single();
 
     if (error) throw error;
+
+    if (authUser) {
+      logAudit(authUser, 'create', 'provider', data.id, { name, initials, role });
+    }
+
     return NextResponse.json(data, { status: 201 });
   } catch (error) {
     console.error('Error creating provider:', error);
@@ -55,8 +63,9 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
   try {
+    const authUser = await getAuthUser(request);
     const body = await request.json();
     const { id, ...updates } = body;
 
@@ -75,6 +84,11 @@ export async function PUT(request: Request) {
       .single();
 
     if (error) throw error;
+
+    if (authUser) {
+      logAudit(authUser, 'update', 'provider', id, { name: data.name, ...updates });
+    }
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error updating provider:', error);
@@ -85,8 +99,9 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
   try {
+    const authUser = await getAuthUser(request);
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
@@ -103,6 +118,11 @@ export async function DELETE(request: Request) {
       .eq('id', id);
 
     if (error) throw error;
+
+    if (authUser) {
+      logAudit(authUser, 'delete', 'provider', id, {});
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting provider:', error);

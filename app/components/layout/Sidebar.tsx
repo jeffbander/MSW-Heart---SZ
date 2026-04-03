@@ -45,6 +45,7 @@ const adminTabs: NavItem[] = [
   { id: 'manage-services', label: 'Manage Services', href: '/admin/services', roles: ['super_admin'] },
   { id: 'templates', label: 'Templates', href: '/admin/templates', roles: ['super_admin'] },
   { id: 'manage-users', label: 'Manage Users', href: '/admin/users', roles: ['super_admin'] },
+  { id: 'audit-log', label: 'Audit Log', href: '/admin/audit-log', roles: ['super_admin'] },
 ];
 
 const TAB_ORDER_KEY = 'cardiology_sidebar_tab_order';
@@ -208,7 +209,7 @@ export default function Sidebar({ isCollapsed, onToggleCollapse, onNavigate }: S
               {/* Admin Items */}
               <div
                 className={`overflow-hidden transition-all duration-200 ${
-                  adminExpanded || isAdminTabActive ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'
+                  adminExpanded || isAdminTabActive ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
                 }`}
               >
                 <div className="mt-1 ml-3 space-y-1">

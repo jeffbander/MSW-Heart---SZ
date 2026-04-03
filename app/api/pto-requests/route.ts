@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { createPTOScheduleAssignments } from '@/lib/ptoScheduleAssignments';
+import { getAuthUser } from '@/lib/auth';
+import { logAudit } from '@/lib/auditLog';
 
 // GET /api/pto-requests - List all PTO requests with optional filters
 export async function GET(request: Request) {
@@ -48,8 +50,9 @@ export async function GET(request: Request) {
 }
 
 // POST /api/pto-requests - Create a new PTO request
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const authUser = await getAuthUser(request);
     const body = await request.json();
     const {
       provider_id,
@@ -132,6 +135,13 @@ export async function POST(request: Request) {
           console.error('Error creating PTO schedule_assignments:', assignmentResult.error);
         }
       }
+    }
+
+    if (authUser) {
+      logAudit(authUser, 'create', 'pto_request', data.id, {
+        provider_id, provider_name: data.provider?.name,
+        start_date, end_date, leave_type, time_block, requested_by,
+      });
     }
 
     return NextResponse.json(data, { status: 201 });

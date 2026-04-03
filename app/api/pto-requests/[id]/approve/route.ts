@@ -1,14 +1,17 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { sendPTOApprovalEmail } from '@/lib/email';
 import { createPTOScheduleAssignments } from '@/lib/ptoScheduleAssignments';
+import { getAuthUser } from '@/lib/auth';
+import { logAudit } from '@/lib/auditLog';
 
 // POST /api/pto-requests/[id]/approve - Approve a PTO request
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authUser = await getAuthUser(request);
     const { id } = await params;
     const body = await request.json();
     const { admin_name, admin_comment } = body;
@@ -111,6 +114,14 @@ export async function POST(
     } catch (emailError) {
       console.error('Failed to send approval email:', emailError);
       // Don't fail - the approval was successful
+    }
+
+    if (authUser) {
+      logAudit(authUser, 'approve', 'pto_request', id, {
+        provider_name: data.provider?.name,
+        start_date: data.start_date, end_date: data.end_date,
+        leave_type: data.leave_type, admin_name,
+      });
     }
 
     return NextResponse.json(data);
