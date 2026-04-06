@@ -17,6 +17,7 @@ interface NavCard {
   href: string;
   color: string;
   comingSoon?: boolean;
+  external?: boolean;
 }
 
 const navCards: NavCard[] = [
@@ -40,7 +41,6 @@ const navCards: NavCard[] = [
     description: 'View scheduling statistics and analytics',
     href: '/statistics',
     color: colors.lightBlue,
-    comingSoon: true,
   },
   {
     id: 'echo',
@@ -55,7 +55,14 @@ const navCards: NavCard[] = [
     description: 'Access scheduling data and exports',
     href: '/data',
     color: '#059669',
-    comingSoon: true,
+  },
+  {
+    id: 'staff-pto',
+    title: 'Staff PTO',
+    description: 'Access the staff PTO management portal',
+    href: 'https://pto-app.mswheart.com',
+    color: '#D97706',
+    external: true,
   },
 ];
 
@@ -75,60 +82,84 @@ export default function DashboardPage() {
 
         {/* Navigation Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {navCards.map((card) => (
-            <Link
-              key={card.id}
-              href={card.comingSoon ? '#' : card.href}
-              className={`relative bg-white rounded-xl shadow-sm p-6 transition-all ${
-                card.comingSoon
-                  ? 'cursor-not-allowed opacity-75'
-                  : 'hover:shadow-lg hover:-translate-y-1'
-              }`}
-              onClick={(e) => card.comingSoon && e.preventDefault()}
-            >
-              {/* Coming Soon Badge */}
-              {card.comingSoon && (
-                <span
-                  className="absolute top-4 right-4 px-2 py-1 text-xs font-medium rounded-full text-white"
-                  style={{ backgroundColor: colors.lightBlue }}
+          {navCards.map((card) => {
+            const cardContent = (
+              <>
+                {/* Coming Soon Badge */}
+                {card.comingSoon && (
+                  <span
+                    className="absolute top-4 right-4 px-2 py-1 text-xs font-medium rounded-full text-white"
+                    style={{ backgroundColor: colors.lightBlue }}
+                  >
+                    Coming Soon
+                  </span>
+                )}
+
+                {/* Card Content */}
+                <div
+                  className="w-12 h-12 rounded-lg flex items-center justify-center mb-4"
+                  style={{ backgroundColor: `${card.color}15` }}
                 >
-                  Coming Soon
-                </span>
-              )}
+                  <div
+                    className="w-6 h-6 rounded"
+                    style={{ backgroundColor: card.color }}
+                  />
+                </div>
 
-              {/* Card Content */}
-              <div
-                className="w-12 h-12 rounded-lg flex items-center justify-center mb-4"
-                style={{ backgroundColor: `${card.color}15` }}
-              >
-                <div
-                  className="w-6 h-6 rounded"
-                  style={{ backgroundColor: card.color }}
-                />
-              </div>
-
-              <h2
-                className="text-xl font-semibold mb-2"
-                style={{ color: card.color }}
-              >
-                {card.title}
-              </h2>
-
-              <p className="text-gray-600 text-sm">
-                {card.description}
-              </p>
-
-              {/* Arrow indicator */}
-              {!card.comingSoon && (
-                <div
-                  className="absolute bottom-4 right-4 text-lg"
+                <h2
+                  className="text-xl font-semibold mb-2"
                   style={{ color: card.color }}
                 >
-                  →
-                </div>
-              )}
-            </Link>
-          ))}
+                  {card.title}
+                </h2>
+
+                <p className="text-gray-600 text-sm">
+                  {card.description}
+                </p>
+
+                {/* Arrow indicator */}
+                {!card.comingSoon && (
+                  <div
+                    className="absolute bottom-4 right-4 text-lg"
+                    style={{ color: card.color }}
+                  >
+                    {card.external ? '↗' : '→'}
+                  </div>
+                )}
+              </>
+            );
+
+            const className = `relative bg-white rounded-xl shadow-sm p-6 transition-all ${
+              card.comingSoon
+                ? 'cursor-not-allowed opacity-75'
+                : 'hover:shadow-lg hover:-translate-y-1'
+            }`;
+
+            if (card.external) {
+              return (
+                <a
+                  key={card.id}
+                  href={card.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={className}
+                >
+                  {cardContent}
+                </a>
+              );
+            }
+
+            return (
+              <Link
+                key={card.id}
+                href={card.comingSoon ? '#' : card.href}
+                className={className}
+                onClick={(e) => card.comingSoon && e.preventDefault()}
+              >
+                {cardContent}
+              </Link>
+            );
+          })}
         </div>
 
         {/* Quick Links */}
