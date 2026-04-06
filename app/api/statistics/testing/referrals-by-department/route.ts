@@ -141,7 +141,7 @@ async function getReferralsByDepartment(months: string | string[]): Promise<Dept
   for (const v of allStatusVisits) {
     const dept = v.department_normalized;
     if (!dept || dept === 'Other') continue;
-    if (v.appointment_status === 'Completed') {
+    if (v.appointment_status === 'Completed' || v.appointment_status === 'Arrived') {
       allStatusCompletedByDept[dept] = (allStatusCompletedByDept[dept] || 0) + 1;
     }
   }
