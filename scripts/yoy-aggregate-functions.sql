@@ -74,7 +74,7 @@ RETURNS TABLE(
   FROM stat_testing_visits v
   WHERE v.report_month = ANY(month_list::DATE[])
     AND v.source_type = 'all_statuses'
-    AND v.appointment_status IN ('Completed', 'Arrived')
+    AND v.appointment_status = 'Completed'
     AND COALESCE(v.department_normalized, 'Unknown') != 'Other'
   GROUP BY COALESCE(v.department_normalized, 'Unknown'), COALESCE(v.visit_type, 'Unknown'), v.report_month
 $$;
@@ -94,7 +94,7 @@ RETURNS TABLE(
     COUNT(*) AS cnt
   FROM stat_testing_visits v
   WHERE v.report_month = ANY(month_list::DATE[])
-    AND v.appointment_status IN ('Completed', 'Arrived')
+    AND v.appointment_status = 'Completed'
     AND COALESCE(v.department_normalized, 'Unknown') != 'Other'
   GROUP BY COALESCE(v.department_normalized, 'Unknown'), COALESCE(v.visit_type, 'Unknown'), v.report_month
 $$;

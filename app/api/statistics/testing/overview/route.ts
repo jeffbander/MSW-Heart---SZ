@@ -159,7 +159,7 @@ async function getTestingOverview(months: string | string[]): Promise<Record<str
   for (const v of allStatusVisits) {
     const dept = v.department_normalized || 'Unknown';
     if (dept === 'Other') continue;
-    if (v.appointment_status === 'Completed' || v.appointment_status === 'Arrived') {
+    if (v.appointment_status === 'Completed') {
       if (!allStatusCompletedStats[dept]) allStatusCompletedStats[dept] = { count: 0, visitTypes: {} };
       allStatusCompletedStats[dept].count++;
       const vt = normalizeVisitType(v.visit_type || 'Unknown');
