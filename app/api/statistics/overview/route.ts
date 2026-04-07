@@ -30,7 +30,7 @@ async function fetchAll<T>(
       }
     }
 
-    query = query.range(offset, offset + PAGE_SIZE - 1);
+    query = query.order('id').range(offset, offset + PAGE_SIZE - 1);
 
     const { data, error } = await query;
     if (error) throw new Error(`${table} query failed: ${error.message}`);

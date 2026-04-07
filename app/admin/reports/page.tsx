@@ -63,6 +63,7 @@ export default function ReportsPage() {
     { value: 'service-coverage', label: 'Service Coverage' },
     { value: 'room-utilization', label: 'Room Utilization' },
     { value: 'pto-summary', label: 'PTO Summary' },
+    { value: 'pto-report', label: 'PTO Report (Monthly/Quarterly)', href: '/admin/reports/pto' },
     { value: 'rooms-open-monthly', label: 'Open Rooms (Monthly)' },
     { value: 'provider-availability', label: 'Provider Availability Planner' },
     { value: 'provider-rules', label: 'Provider Rules' },
@@ -847,6 +848,11 @@ export default function ReportsPage() {
             <select
               value={reportType}
               onChange={(e) => {
+                const selected = reportTypes.find(rt => rt.value === e.target.value);
+                if (selected && 'href' in selected && selected.href) {
+                  window.location.href = selected.href as string;
+                  return;
+                }
                 setReportType(e.target.value as ReportType);
                 setReport(null); // Clear previous report when switching types
               }}

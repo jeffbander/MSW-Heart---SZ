@@ -21,7 +21,7 @@ async function fetchAll<T>(
         query = query.in(key, values);
       }
     }
-    query = query.range(offset, offset + PAGE_SIZE - 1);
+    query = query.order('id').range(offset, offset + PAGE_SIZE - 1);
     const { data, error } = await query;
     if (error) throw new Error(`${table} query failed: ${error.message}`);
     if (!data || data.length === 0) break;
