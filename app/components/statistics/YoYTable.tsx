@@ -5,83 +5,124 @@ import React from 'react';
 const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
 
+// Colors for year columns: each year gets a subtle tint
+const YEAR_COLORS = ['#003D7A', '#0078C8', '#00A3AD', '#7C3AED'];
+const YEAR_BG_LIGHT = ['#f0f4f8', '#eef6ff', '#edfcfa', '#f5f3ff'];
+
 interface RowData {
   label: string;
   isSubRow?: boolean;
-  monthData: Record<number, { year1: number; year2: number }>;
+  monthData: Record<number, Record<number, number>>;
 }
 
 interface YoYTableProps {
   title: string;
   accentColor: string;
   rows: RowData[];
-  year1: number;
-  year2: number;
+  years: number[];
   months: number[];
   tableId: string;
 }
 
-function pctChange(y1: number, y2: number): { text: string; color: string } {
-  if (y1 === 0 && y2 === 0) return { text: '--', color: 'text-gray-400' };
-  if (y1 === 0) return { text: 'New', color: 'text-blue-600' };
-  const pct = ((y2 - y1) / y1) * 100;
+function pctChange(base: number, current: number): { text: string; color: string } {
+  if (base === 0 && current === 0) return { text: '--', color: '#9ca3af' };
+  if (base === 0) return { text: 'New', color: '#2563eb' };
+  const pct = ((current - base) / base) * 100;
   const sign = pct > 0 ? '+' : '';
   return {
     text: `${sign}${pct.toFixed(1)}%`,
-    color: pct > 0 ? 'text-green-600' : pct < 0 ? 'text-red-600' : 'text-gray-400',
+    color: pct > 0 ? '#16a34a' : pct < 0 ? '#dc2626' : '#9ca3af',
   };
 }
 
-export default function YoYTable({ title, accentColor, rows, year1, year2, months, tableId }: YoYTableProps) {
+export default function YoYTable({ title, accentColor, rows, years, months, tableId }: YoYTableProps) {
   const showYtd = months.length > 1;
+  const numYears = years.length;
+  // Columns per month group: one column per year + % change column (comparing each to previous year)
+  const colsPerMonth = numYears + (numYears > 1 ? 1 : 0); // years + 1 change column (latest vs first)
 
   // Compute total row
-  const totalMonthData: Record<number, { year1: number; year2: number }> = {};
+  const totalMonthData: Record<number, Record<number, number>> = {};
   for (const m of months) {
-    totalMonthData[m] = { year1: 0, year2: 0 };
+    totalMonthData[m] = {};
+    for (const yr of years) totalMonthData[m][yr] = 0;
     for (const row of rows) {
       if (row.isSubRow) continue;
-      const d = row.monthData[m] || { year1: 0, year2: 0 };
-      totalMonthData[m].year1 += d.year1;
-      totalMonthData[m].year2 += d.year2;
+      for (const yr of years) {
+        totalMonthData[m][yr] += row.monthData[m]?.[yr] || 0;
+      }
     }
   }
 
-  const renderDataCells = (monthData: Record<number, { year1: number; year2: number }>, bold = false) => {
-    const cells = [];
-    let ytdY1 = 0, ytdY2 = 0;
+  const renderDataCells = (monthData: Record<number, Record<number, number>>, bold = false) => {
+    const cells: React.ReactNode[] = [];
+    const ytdByYear: Record<number, number> = {};
+    for (const yr of years) ytdByYear[yr] = 0;
 
     for (const m of months) {
-      const d = monthData[m] || { year1: 0, year2: 0 };
-      ytdY1 += d.year1;
-      ytdY2 += d.year2;
-      const chg = pctChange(d.year1, d.year2);
-      cells.push(
-        <td key={`${m}-y1`} style={{ padding: '8px 12px', textAlign: 'right', borderLeft: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb', fontVariantNumeric: 'tabular-nums', fontWeight: bold ? 700 : 400 }}>
-          {d.year1.toLocaleString()}
-        </td>,
-        <td key={`${m}-y2`} style={{ padding: '8px 12px', textAlign: 'right', borderBottom: '1px solid #e5e7eb', fontVariantNumeric: 'tabular-nums', fontWeight: bold ? 700 : 400 }}>
-          {d.year2.toLocaleString()}
-        </td>,
-        <td key={`${m}-chg`} style={{ padding: '8px 12px', textAlign: 'right', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb', fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem', fontWeight: bold ? 600 : 500, color: chg.color === 'text-green-600' ? '#16a34a' : chg.color === 'text-red-600' ? '#dc2626' : chg.color === 'text-blue-600' ? '#2563eb' : '#9ca3af' }}>
-          {chg.text}
-        </td>
-      );
+      for (const yr of years) {
+        const val = monthData[m]?.[yr] || 0;
+        ytdByYear[yr] += val;
+        cells.push(
+          <td key={`${m}-${yr}`} style={{
+            padding: '8px 10px', textAlign: 'right',
+            borderLeft: yr === years[0] ? '1px solid #e5e7eb' : undefined,
+            borderBottom: '1px solid #e5e7eb',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: bold ? 700 : 400,
+            fontSize: '0.85rem',
+          }}>
+            {val > 0 ? val.toLocaleString() : <span style={{ color: '#d1d5db' }}>-</span>}
+          </td>
+        );
+      }
+      // % change: latest year vs first year
+      if (numYears > 1) {
+        const first = monthData[m]?.[years[0]] || 0;
+        const last = monthData[m]?.[years[numYears - 1]] || 0;
+        const chg = pctChange(first, last);
+        cells.push(
+          <td key={`${m}-chg`} style={{
+            padding: '8px 8px', textAlign: 'right',
+            borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+            fontVariantNumeric: 'tabular-nums', fontSize: '0.78rem',
+            fontWeight: bold ? 600 : 500, color: chg.color,
+          }}>
+            {chg.text}
+          </td>
+        );
+      }
     }
 
     if (showYtd) {
-      const ytdChg = pctChange(ytdY1, ytdY2);
-      cells.push(
-        <td key="ytd-y1" style={{ padding: '8px 12px', textAlign: 'right', borderLeft: '2px solid #d1d5db', borderBottom: '1px solid #e5e7eb', fontVariantNumeric: 'tabular-nums', fontWeight: bold ? 700 : 600, backgroundColor: '#fafafa' }}>
-          {ytdY1.toLocaleString()}
-        </td>,
-        <td key="ytd-y2" style={{ padding: '8px 12px', textAlign: 'right', borderBottom: '1px solid #e5e7eb', fontVariantNumeric: 'tabular-nums', fontWeight: bold ? 700 : 600, backgroundColor: '#fafafa' }}>
-          {ytdY2.toLocaleString()}
-        </td>,
-        <td key="ytd-chg" style={{ padding: '8px 12px', textAlign: 'right', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb', fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem', fontWeight: bold ? 600 : 500, backgroundColor: '#fafafa', color: ytdChg.color === 'text-green-600' ? '#16a34a' : ytdChg.color === 'text-red-600' ? '#dc2626' : ytdChg.color === 'text-blue-600' ? '#2563eb' : '#9ca3af' }}>
-          {ytdChg.text}
-        </td>
-      );
+      for (const yr of years) {
+        cells.push(
+          <td key={`ytd-${yr}`} style={{
+            padding: '8px 10px', textAlign: 'right',
+            borderLeft: yr === years[0] ? '2px solid #d1d5db' : undefined,
+            borderBottom: '1px solid #e5e7eb',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: bold ? 700 : 600,
+            backgroundColor: '#fafafa',
+            fontSize: '0.85rem',
+          }}>
+            {ytdByYear[yr] > 0 ? ytdByYear[yr].toLocaleString() : <span style={{ color: '#d1d5db' }}>-</span>}
+          </td>
+        );
+      }
+      if (numYears > 1) {
+        const ytdChg = pctChange(ytdByYear[years[0]], ytdByYear[years[numYears - 1]]);
+        cells.push(
+          <td key="ytd-chg" style={{
+            padding: '8px 8px', textAlign: 'right',
+            borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+            fontVariantNumeric: 'tabular-nums', fontSize: '0.78rem',
+            fontWeight: bold ? 600 : 500, backgroundColor: '#fafafa', color: ytdChg.color,
+          }}>
+            {ytdChg.text}
+          </td>
+        );
+      }
     }
 
     return cells;
@@ -101,32 +142,47 @@ export default function YoYTable({ title, accentColor, rows, year1, year2, month
                 Category
               </th>
               {months.map(m => (
-                <th key={m} colSpan={3} style={{ padding: '8px 12px', textAlign: 'center', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderLeft: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>
+                <th key={m} colSpan={colsPerMonth} style={{ padding: '8px 10px', textAlign: 'center', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderLeft: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>
                   {MONTH_NAMES[m]}
                 </th>
               ))}
               {showYtd && (
-                <th colSpan={3} style={{ padding: '8px 12px', textAlign: 'center', backgroundColor: '#003D7A', color: 'white', fontWeight: 700, borderLeft: '2px solid rgba(255,255,255,0.4)', borderBottom: '1px solid #e5e7eb' }}>
+                <th colSpan={colsPerMonth} style={{ padding: '8px 10px', textAlign: 'center', backgroundColor: '#003D7A', color: 'white', fontWeight: 700, borderLeft: '2px solid rgba(255,255,255,0.4)', borderBottom: '1px solid #e5e7eb' }}>
                   YTD
                 </th>
               )}
             </tr>
             {/* Year sub-header row */}
             <tr>
-              {months.map(m => (
-                <React.Fragment key={m}>
-                  <th style={{ padding: '6px 12px', textAlign: 'right', backgroundColor: '#f3f4f6', fontWeight: 600, fontSize: '0.75rem', color: '#374151', borderLeft: '1px solid #e5e7eb', borderBottom: '1px solid #d1d5db' }}>{year1}</th>
-                  <th style={{ padding: '6px 12px', textAlign: 'right', backgroundColor: '#f3f4f6', fontWeight: 600, fontSize: '0.75rem', color: '#374151', borderBottom: '1px solid #d1d5db' }}>{year2}</th>
-                  <th style={{ padding: '6px 12px', textAlign: 'right', backgroundColor: '#f3f4f6', fontWeight: 600, fontSize: '0.75rem', color: '#374151', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #d1d5db' }}>% Chg</th>
-                </React.Fragment>
-              ))}
-              {showYtd && (
-                <>
-                  <th style={{ padding: '6px 12px', textAlign: 'right', backgroundColor: '#e5e7eb', fontWeight: 600, fontSize: '0.75rem', color: '#374151', borderLeft: '2px solid #d1d5db', borderBottom: '1px solid #d1d5db' }}>{year1}</th>
-                  <th style={{ padding: '6px 12px', textAlign: 'right', backgroundColor: '#e5e7eb', fontWeight: 600, fontSize: '0.75rem', color: '#374151', borderBottom: '1px solid #d1d5db' }}>{year2}</th>
-                  <th style={{ padding: '6px 12px', textAlign: 'right', backgroundColor: '#e5e7eb', fontWeight: 600, fontSize: '0.75rem', color: '#374151', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #d1d5db' }}>% Chg</th>
-                </>
-              )}
+              {[...months, ...(showYtd ? [-1] : [])].map((m, mi) => {
+                const isYtd = m === -1;
+                return (
+                  <React.Fragment key={mi}>
+                    {years.map((yr, yi) => (
+                      <th key={`${m}-${yr}`} style={{
+                        padding: '6px 10px', textAlign: 'right',
+                        backgroundColor: isYtd ? '#e5e7eb' : '#f3f4f6',
+                        fontWeight: 600, fontSize: '0.75rem', color: YEAR_COLORS[yi] || '#374151',
+                        borderLeft: yi === 0 ? (isYtd ? '2px solid #d1d5db' : '1px solid #e5e7eb') : undefined,
+                        borderBottom: '1px solid #d1d5db',
+                      }}>
+                        {yr}
+                      </th>
+                    ))}
+                    {numYears > 1 && (
+                      <th style={{
+                        padding: '6px 8px', textAlign: 'right',
+                        backgroundColor: isYtd ? '#e5e7eb' : '#f3f4f6',
+                        fontWeight: 600, fontSize: '0.75rem', color: '#374151',
+                        borderRight: '1px solid #e5e7eb',
+                        borderBottom: '1px solid #d1d5db',
+                      }}>
+                        % Chg
+                      </th>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tr>
           </thead>
           <tbody>

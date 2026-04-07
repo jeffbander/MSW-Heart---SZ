@@ -11,11 +11,12 @@ function normalizeVisitType(vt: string): string {
   return VISIT_TYPE_MERGE[vt] || vt;
 }
 
-function buildMonthArray(year1: number, year2: number, startMonth: number, endMonth: number): string[] {
+function buildMonthArray(years: number[], startMonth: number, endMonth: number): string[] {
   const months: string[] = [];
   for (let m = startMonth; m <= endMonth; m++) {
-    months.push(`${year1}-${String(m).padStart(2, '0')}-01`);
-    months.push(`${year2}-${String(m).padStart(2, '0')}-01`);
+    for (const yr of years) {
+      months.push(`${yr}-${String(m).padStart(2, '0')}-01`);
+    }
   }
   return months;
 }
@@ -31,21 +32,30 @@ function getYear(reportMonth: string): number {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const year1 = parseInt(searchParams.get('year1') || '');
-    const year2 = parseInt(searchParams.get('year2') || '');
     const startMonth = parseInt(searchParams.get('startMonth') || '1');
     const endMonth = parseInt(searchParams.get('endMonth') || '12');
 
-    if (!year1 || !year2 || startMonth < 1 || endMonth > 12 || startMonth > endMonth) {
-      return NextResponse.json({ error: 'Invalid parameters' }, { status: 400 });
+    // Support new multi-year param OR old year1/year2 for backward compat
+    let years: number[];
+    const yearsParam = searchParams.get('years');
+    if (yearsParam) {
+      years = yearsParam.split(',').map(Number).filter(y => y > 0).sort();
+    } else {
+      const year1 = parseInt(searchParams.get('year1') || '');
+      const year2 = parseInt(searchParams.get('year2') || '');
+      if (!year1 || !year2) {
+        return NextResponse.json({ error: 'Invalid parameters' }, { status: 400 });
+      }
+      years = [year1, year2].sort();
     }
 
-    const allMonths = buildMonthArray(year1, year2, startMonth, endMonth);
+    if (years.length < 2 || years.length > 4 || startMonth < 1 || endMonth > 12 || startMonth > endMonth) {
+      return NextResponse.json({ error: 'Invalid parameters. Need 2-4 years.' }, { status: 400 });
+    }
+
+    const allMonths = buildMonthArray(years, startMonth, endMonth);
     const monthNums: number[] = [];
     for (let m = startMonth; m <= endMonth; m++) monthNums.push(m);
-
-    // Use RPC aggregate functions (created in yoy-aggregate-functions.sql)
-    // These do GROUP BY in the database, returning ~50-100 rows instead of 250K+
 
     // Fire all queries in parallel
     const [officeRes, completedRes, allStatusRes] = await Promise.all([
@@ -61,7 +71,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Office query failed: ' + officeRes.error.message }, { status: 500 });
     }
 
-    // Fallback if no all_statuses data
     if (!officeAgg || officeAgg.length === 0) {
       const fb = await supabase.rpc('yoy_office_visits_fallback', { month_list: allMonths });
       if (fb.error) {
@@ -70,17 +79,22 @@ export async function GET(request: NextRequest) {
       officeAgg = fb.data || [];
     }
 
-    const officeData: Record<string, Record<number, { year1: number; year2: number }>> = {};
+    // Record<category, Record<month, Record<year, count>>>
+    const officeData: Record<string, Record<number, Record<number, number>>> = {};
     for (const row of officeAgg) {
       const cat = row.visit_type_category || 'Other';
       const monthNum = getMonthNum(row.report_month);
       const rowYear = getYear(row.report_month);
 
       if (!officeData[cat]) officeData[cat] = {};
-      if (!officeData[cat][monthNum]) officeData[cat][monthNum] = { year1: 0, year2: 0 };
+      if (!officeData[cat][monthNum]) {
+        officeData[cat][monthNum] = {};
+        for (const yr of years) officeData[cat][monthNum][yr] = 0;
+      }
 
-      if (rowYear === year1) officeData[cat][monthNum].year1 = Number(row.cnt);
-      else if (rowYear === year2) officeData[cat][monthNum].year2 = Number(row.cnt);
+      if (years.includes(rowYear)) {
+        officeData[cat][monthNum][rowYear] = Number(row.cnt);
+      }
     }
 
     // --- Testing Visits ---
@@ -98,7 +112,7 @@ export async function GET(request: NextRequest) {
       allStatusData = fb.data || [];
     }
 
-    // Build per-source aggregation
+    // Build per-source aggregation: Record<dept, Record<month, Record<year, { count, visitTypes }>>>
     type SourceAgg = Record<string, Record<number, Record<number, { count: number; visitTypes: Record<string, number> }>>>;
 
     function buildSourceAgg(rows: Array<{ department_normalized: string; visit_type: string; report_month: string; cnt: number }>): SourceAgg {
@@ -126,38 +140,42 @@ export async function GET(request: NextRequest) {
     // Merge: use higher count per (dept, month, year)
     const allDepts = new Set([...Object.keys(completedSource), ...Object.keys(allStatusSource)]);
     const testingResult: Record<string, {
-      totals: Record<number, { year1: number; year2: number }>;
-      visitTypes: Record<string, Record<number, { year1: number; year2: number }>>;
+      totals: Record<number, Record<number, number>>;
+      visitTypes: Record<string, Record<number, Record<number, number>>>;
     }> = {};
 
     for (const dept of allDepts) {
       testingResult[dept] = { totals: {}, visitTypes: {} };
 
       for (const monthNum of monthNums) {
-        for (const yr of [year1, year2]) {
+        testingResult[dept].totals[monthNum] = {};
+
+        for (const yr of years) {
           const compSrc = completedSource[dept]?.[monthNum]?.[yr] || { count: 0, visitTypes: {} };
           const allSrc = allStatusSource[dept]?.[monthNum]?.[yr] || { count: 0, visitTypes: {} };
           const best = compSrc.count >= allSrc.count ? compSrc : allSrc;
 
-          const yearKey = yr === year1 ? 'year1' : 'year2';
-
-          if (!testingResult[dept].totals[monthNum]) testingResult[dept].totals[monthNum] = { year1: 0, year2: 0 };
-          testingResult[dept].totals[monthNum][yearKey] = best.count;
+          testingResult[dept].totals[monthNum][yr] = best.count;
 
           for (const [vt, count] of Object.entries(best.visitTypes)) {
             if (!testingResult[dept].visitTypes[vt]) testingResult[dept].visitTypes[vt] = {};
-            if (!testingResult[dept].visitTypes[vt][monthNum]) testingResult[dept].visitTypes[vt][monthNum] = { year1: 0, year2: 0 };
-            testingResult[dept].visitTypes[vt][monthNum][yearKey] = count;
+            if (!testingResult[dept].visitTypes[vt][monthNum]) {
+              testingResult[dept].visitTypes[vt][monthNum] = {};
+              for (const y of years) testingResult[dept].visitTypes[vt][monthNum][y] = 0;
+            }
+            testingResult[dept].visitTypes[vt][monthNum][yr] = count;
           }
         }
       }
     }
 
+    // Backward compat: also include year1/year2 for old consumers
     return NextResponse.json({
       officeVisits: officeData,
       testingVisits: testingResult,
-      year1,
-      year2,
+      years,
+      year1: years[0],
+      year2: years[years.length - 1],
       months: monthNums,
     });
   } catch (error) {
