@@ -35,6 +35,7 @@ export interface Provider {
   initials: string;
   role: string;
   email?: string;
+  location?: string; // 'west' | 'morningside' | 'other'
   default_room_count: number;
   capabilities: string[];
   work_days: number[]; // JS day-of-week: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri

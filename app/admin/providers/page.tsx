@@ -47,10 +47,12 @@ export default function ProvidersAdminPage() {
   const [filterCapability, setFilterCapability] = useState('');
   const [sortField, setSortField] = useState<'initials' | 'name' | 'role' | 'rooms' | 'pto'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [filterLocation, setFilterLocation] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     initials: '',
     role: 'attending',
+    location: '' as string,
     default_room_count: 0,
     capabilities: [] as string[],
     work_days: [1, 2, 3, 4, 5] as number[]
@@ -237,6 +239,7 @@ export default function ProvidersAdminPage() {
       name: '',
       initials: '',
       role: 'attending',
+      location: '',
       default_room_count: 0,
       capabilities: [],
       work_days: [1, 2, 3, 4, 5]
@@ -250,6 +253,7 @@ export default function ProvidersAdminPage() {
       name: provider.name,
       initials: provider.initials,
       role: provider.role,
+      location: provider.location || '',
       default_room_count: provider.default_room_count,
       capabilities: provider.capabilities,
       work_days: provider.work_days || [1, 2, 3, 4, 5]
@@ -310,6 +314,7 @@ export default function ProvidersAdminPage() {
       if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase())
           && !p.initials.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (filterRole && p.role !== filterRole) return false;
+      if (filterLocation && (p.location || '') !== filterLocation) return false;
       if (filterCapability && !p.capabilities.includes(filterCapability)) return false;
       return true;
     });
@@ -335,7 +340,7 @@ export default function ProvidersAdminPage() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return result;
-  }, [providers, searchQuery, filterRole, filterCapability, sortField, sortDir, ptoBalances]);
+  }, [providers, searchQuery, filterRole, filterLocation, filterCapability, sortField, sortDir, ptoBalances]);
 
   if (loading) {
     return <div className="text-center py-8">Loading providers...</div>;
@@ -390,7 +395,7 @@ export default function ProvidersAdminPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Role</label>
                   <select
@@ -403,6 +408,20 @@ export default function ProvidersAdminPage() {
                     <option value="fellow">Fellow</option>
                     <option value="pa">PA (Physician Assistant)</option>
                     <option value="np">NP (Nurse Practitioner)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Location</label>
+                  <select
+                    value={formData.location}
+                    onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded"
+                    style={{ borderColor: colors.border }}
+                  >
+                    <option value="">Not Set</option>
+                    <option value="west">West</option>
+                    <option value="morningside">Morningside</option>
+                    <option value="other">Other</option>
                   </select>
                 </div>
                 <div>
@@ -660,6 +679,19 @@ export default function ProvidersAdminPage() {
           </div>
           <div>
             <select
+              value={filterLocation}
+              onChange={(e) => setFilterLocation(e.target.value)}
+              className="px-3 py-2 border rounded text-sm"
+              style={{ borderColor: colors.border }}
+            >
+              <option value="">All Locations</option>
+              <option value="west">West</option>
+              <option value="morningside">Morningside</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <select
               value={filterCapability}
               onChange={(e) => setFilterCapability(e.target.value)}
               className="px-3 py-2 border rounded text-sm"
@@ -726,6 +758,24 @@ export default function ProvidersAdminPage() {
                      provider.role === 'pa' ? 'PA' :
                      provider.role === 'np' ? 'NP' : 'MD'}
                   </span>
+                  {provider.location && (
+                    <span
+                      className="ml-1 px-2 py-1 rounded text-xs font-medium"
+                      style={{
+                        backgroundColor:
+                          provider.location === 'west' ? '#DBEAFE' :
+                          provider.location === 'morningside' ? '#FEF3C7' :
+                          '#F3F4F6',
+                        color:
+                          provider.location === 'west' ? '#1E40AF' :
+                          provider.location === 'morningside' ? '#92400E' :
+                          '#374151',
+                      }}
+                    >
+                      {provider.location === 'west' ? 'West' :
+                       provider.location === 'morningside' ? 'Morningside' : 'Other'}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   {loadingBalances ? (

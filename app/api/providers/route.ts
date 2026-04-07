@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   try {
     const authUser = await getAuthUser(request);
     const body = await request.json();
-    const { name, initials, role, default_room_count, capabilities } = body;
+    const { name, initials, role, location, default_room_count, capabilities } = body;
 
     if (!name || !initials || !role) {
       return NextResponse.json(
@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
         name,
         initials,
         role,
+        location: location || null,
         default_room_count: default_room_count || 0,
         capabilities: capabilities || []
       })
