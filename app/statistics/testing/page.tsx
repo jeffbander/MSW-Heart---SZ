@@ -23,9 +23,15 @@ interface DeptStats {
   visitTypes: Record<string, number>;
 }
 
+interface YearComparison {
+  year: number;
+  data: Record<string, DeptStats>;
+}
+
 interface OverviewData {
   departments: Record<string, DeptStats>;
   comparison: Record<string, DeptStats> | null;
+  comparisons?: YearComparison[];
   comparisonLabel?: string;
 }
 
@@ -100,6 +106,7 @@ export default function TestingAnalyticsPage() {
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState('');
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('vs_prior_month');
+  const [ytdYears, setYtdYears] = useState(2);
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [ordersData, setOrdersData] = useState<OrdersData | null>(null);
   const [referralsData, setReferralsData] = useState<ReferralsData | null>(null);
@@ -143,6 +150,7 @@ export default function TestingAnalyticsPage() {
     setExpandedReferralsOutside(new Set());
 
     const params = new URLSearchParams({ reportMonth: selectedMonth, comparisonMode });
+    if (comparisonMode === 'vs_ytd_prior_year') params.set('ytdYears', String(ytdYears));
 
     Promise.all([
       fetch(`/api/statistics/testing/overview?${params}`).then(r => r.json()),
@@ -157,7 +165,7 @@ export default function TestingAnalyticsPage() {
       setError(err.message);
       setOverview(null);
     }).finally(() => setLoading(false));
-  }, [selectedMonth, comparisonMode]);
+  }, [selectedMonth, comparisonMode, ytdYears]);
 
   const formatMonth = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
@@ -203,6 +211,8 @@ export default function TestingAnalyticsPage() {
     : [];
 
   const hasComparison = !!overview?.comparison;
+  const comparisons: YearComparison[] = overview?.comparisons || (overview?.comparison ? [{ year: 0, data: overview.comparison }] : []);
+  const numComparisons = comparisons.length;
   const totalCompleted = sortedDepts.reduce((s, d) => s + (overview?.departments[d]?.completed || 0), 0);
 
   return (
@@ -250,6 +260,17 @@ export default function TestingAnalyticsPage() {
               <option value="vs_same_year_ago">vs Same Month Last Year</option>
               <option value="vs_ytd_prior_year">YTD vs Prior YTD</option>
             </select>
+            {comparisonMode === 'vs_ytd_prior_year' && (
+              <select
+                value={ytdYears}
+                onChange={(e) => setYtdYears(parseInt(e.target.value))}
+                className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={2}>2 years</option>
+                <option value={3}>3 years</option>
+                <option value={4}>4 years</option>
+              </select>
+            )}
           </div>
 
           <span className="text-xs text-gray-400 ml-auto">
@@ -358,9 +379,11 @@ export default function TestingAnalyticsPage() {
                       <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">% of Total</th>
                       <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">No Show %</th>
                       <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Late Cancel %</th>
-                      {hasComparison && (
-                        <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Change</th>
-                      )}
+                      {hasComparison && comparisons.map((c, i) => (
+                        <th key={i} className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          {c.year ? `vs ${c.year}` : 'Change'}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -372,7 +395,7 @@ export default function TestingAnalyticsPage() {
 
                       return (
                         <tr key={dept}>
-                          <td colSpan={hasComparison ? 6 : 5} className="p-0">
+                          <td colSpan={5 + numComparisons} className="p-0">
                             <table className="w-full">
                               <tbody>
                                 <tr
@@ -397,11 +420,14 @@ export default function TestingAnalyticsPage() {
                                   <td className="px-5 py-3 text-sm text-gray-500 text-right w-[14%]">
                                     {stats.lateCancelRate}%
                                   </td>
-                                  {hasComparison && (
-                                    <td className={`px-5 py-3 text-sm text-right font-medium w-[15%] ${formatChange(stats.completed, compStats?.completed || 0).color}`}>
-                                      {formatChange(stats.completed, compStats?.completed || 0).text}
-                                    </td>
-                                  )}
+                                  {hasComparison && comparisons.map((c, ci) => {
+                                    const cs = c.data[dept];
+                                    return (
+                                      <td key={ci} className={`px-4 py-3 text-sm text-right font-medium ${formatChange(stats.completed, cs?.completed || 0).color}`}>
+                                        {formatChange(stats.completed, cs?.completed || 0).text}
+                                      </td>
+                                    );
+                                  })}
                                 </tr>
                                 {isExpanded && visitTypeEntries.map(([vt, count]) => (
                                   <tr key={vt} className="bg-gray-50/50 border-l-2 border-[#003D7A]/20">
@@ -412,7 +438,7 @@ export default function TestingAnalyticsPage() {
                                     </td>
                                     <td className="px-5 py-2 w-[14%]"></td>
                                     <td className="px-5 py-2 w-[14%]"></td>
-                                    {hasComparison && <td className="px-5 py-2 w-[15%]"></td>}
+                                    {hasComparison && comparisons.map((_, ci) => <td key={ci} className="px-4 py-2"></td>)}
                                   </tr>
                                 ))}
                               </tbody>
@@ -428,14 +454,14 @@ export default function TestingAnalyticsPage() {
                       <td className="px-5 py-3 text-sm text-gray-400 text-right">100%</td>
                       <td className="px-5 py-3"></td>
                       <td className="px-5 py-3"></td>
-                      {hasComparison && (() => {
-                        const compTotal = sortedDepts.reduce((s, d) => s + (overview.comparison?.[d]?.completed || 0), 0);
+                      {hasComparison && comparisons.map((c, ci) => {
+                        const compTotal = sortedDepts.reduce((s, d) => s + (c.data[d]?.completed || 0), 0);
                         return (
-                          <td className={`px-5 py-3 text-sm text-right font-medium ${formatChange(totalCompleted, compTotal).color}`}>
+                          <td key={ci} className={`px-4 py-3 text-sm text-right font-medium ${formatChange(totalCompleted, compTotal).color}`}>
                             {formatChange(totalCompleted, compTotal).text}
                           </td>
                         );
-                      })()}
+                      })}
                     </tr>
                   </tbody>
                 </table>

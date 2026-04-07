@@ -211,23 +211,34 @@ export async function GET(request: NextRequest) {
       const date = new Date(reportMonth + 'T00:00:00');
       const year = date.getFullYear();
       const month = date.getMonth() + 1;
-      const currentMonths = getMonthRange(year, month);
-      const priorMonths = getMonthRange(year - 1, month);
+      const ytdYears = Math.min(Math.max(parseInt(searchParams.get('ytdYears') || '2'), 2), 4);
 
-      const [current, comparison] = await Promise.all([
+      const currentMonths = getMonthRange(year, month);
+      const priorPromises = [];
+      for (let i = 1; i < ytdYears; i++) {
+        priorPromises.push(getOrdersByDepartment(getMonthRange(year - i, month)));
+      }
+
+      const [current, ...priorResults] = await Promise.all([
         getOrdersByDepartment(currentMonths),
-        getOrdersByDepartment(priorMonths),
+        ...priorPromises,
       ]);
 
       const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+      const comparisonYears = Array.from({ length: ytdYears - 1 }, (_, i) => year - (i + 1));
+      const comparisons = priorResults.map((result, i) => ({
+        year: comparisonYears[i],
+        data: result,
+      }));
 
       return NextResponse.json({
         departments: current,
-        comparison,
+        comparison: priorResults[0],
+        comparisons,
         reportMonth,
         comparisonMonth: null,
         comparisonMode,
-        comparisonLabel: `YTD through ${monthName} ${year} vs ${year - 1}`,
+        comparisonLabel: `YTD through ${monthName} ${year} vs ${comparisonYears.join(', ')}`,
       });
     }
 

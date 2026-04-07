@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (comparisonMode === 'vs_ytd_prior_year') {
-      return handleYTDComparison(reportMonth);
+      const ytdYears = Math.min(Math.max(parseInt(searchParams.get('ytdYears') || '2'), 2), 4);
+      return handleYTDComparison(reportMonth, ytdYears);
     }
 
     const comparisonMonth = getComparisonMonth(reportMonth, comparisonMode);
@@ -118,38 +119,54 @@ function getMonthRange(year: number, throughMonth: number): string[] {
   return months;
 }
 
-async function handleYTDComparison(reportMonth: string) {
+async function handleYTDComparison(reportMonth: string, ytdYears: number) {
   const date = new Date(reportMonth + 'T00:00:00');
   const year = date.getFullYear();
   const month = date.getMonth() + 1;
 
   const currentMonths = getMonthRange(year, month);
-  const priorMonths = getMonthRange(year - 1, month);
 
-  const [current, comparison] = await Promise.all([
+  // Fetch all prior years in parallel
+  const priorOffice = [];
+  const priorTesting = [];
+  const priorOrders = [];
+  for (let i = 1; i < ytdYears; i++) {
+    const priorMonths = getMonthRange(year - i, month);
+    priorOffice.push(getOfficeVisitStats(priorMonths));
+    priorTesting.push(getTestingVolumeStats(priorMonths));
+    priorOrders.push(getOrderStats(priorMonths));
+  }
+
+  const [current, testing, orders, ...priorAll] = await Promise.all([
     getOfficeVisitStats(currentMonths),
-    getOfficeVisitStats(priorMonths),
-  ]);
-
-  const [testing, comparisonTesting] = await Promise.all([
     getTestingVolumeStats(currentMonths),
-    getTestingVolumeStats(priorMonths),
+    getOrderStats(currentMonths),
+    ...priorOffice,
+    ...priorTesting,
+    ...priorOrders,
   ]);
 
-  const [orders, comparisonOrders] = await Promise.all([
-    getOrderStats(currentMonths),
-    getOrderStats(priorMonths),
-  ]);
+  const numPrior = ytdYears - 1;
+  const officeResults = priorAll.slice(0, numPrior);
+  const testingResults = priorAll.slice(numPrior, numPrior * 2);
+  const orderResults = priorAll.slice(numPrior * 2);
+
+  const comparisonYears = Array.from({ length: numPrior }, (_, i) => year - (i + 1));
+  const comparisons = comparisonYears.map((y, i) => ({
+    year: y,
+    data: { ...officeResults[i], testing: testingResults[i], orders: orderResults[i] },
+  }));
 
   const monthName = date.toLocaleDateString('en-US', { month: 'short' });
 
   return NextResponse.json({
     current: { ...current, testing, orders },
-    comparison: { ...comparison, testing: comparisonTesting, orders: comparisonOrders },
+    comparison: comparisons[0]?.data || null, // backward compat
+    comparisons,
     reportMonth,
     comparisonMonth: null,
     comparisonMode: 'vs_ytd_prior_year',
-    comparisonLabel: `YTD through ${monthName} ${year} vs ${year - 1}`,
+    comparisonLabel: `YTD through ${monthName} ${year} vs ${comparisonYears.join(', ')}`,
   });
 }
 
