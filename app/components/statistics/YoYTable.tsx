@@ -22,6 +22,7 @@ interface YoYTableProps {
   years: number[];
   months: number[];
   tableId: string;
+  totalsOnly?: boolean;
 }
 
 function pctChange(base: number, current: number): { text: string; color: string } {
@@ -35,8 +36,8 @@ function pctChange(base: number, current: number): { text: string; color: string
   };
 }
 
-export default function YoYTable({ title, accentColor, rows, years, months, tableId }: YoYTableProps) {
-  const showYtd = months.length > 1;
+export default function YoYTable({ title, accentColor, rows, years, months, tableId, totalsOnly }: YoYTableProps) {
+  const showYtd = months.length > 1 || totalsOnly;
   const numYears = years.length;
   // Columns per month group: one column per year + % change column (comparing each to previous year)
   const colsPerMonth = numYears + (numYears > 1 ? 1 : 0); // years + 1 change column (latest vs first)
@@ -63,34 +64,39 @@ export default function YoYTable({ title, accentColor, rows, years, months, tabl
       for (const yr of years) {
         const val = monthData[m]?.[yr] || 0;
         ytdByYear[yr] += val;
-        cells.push(
-          <td key={`${m}-${yr}`} style={{
-            padding: '8px 10px', textAlign: 'right',
-            borderLeft: yr === years[0] ? '1px solid #e5e7eb' : undefined,
-            borderBottom: '1px solid #e5e7eb',
-            fontVariantNumeric: 'tabular-nums',
-            fontWeight: bold ? 700 : 400,
-            fontSize: '0.85rem',
-          }}>
-            {val > 0 ? val.toLocaleString() : <span style={{ color: '#d1d5db' }}>-</span>}
-          </td>
-        );
       }
-      // % change: latest year vs first year
-      if (numYears > 1) {
-        const first = monthData[m]?.[years[0]] || 0;
-        const last = monthData[m]?.[years[numYears - 1]] || 0;
-        const chg = pctChange(first, last);
-        cells.push(
-          <td key={`${m}-chg`} style={{
-            padding: '8px 8px', textAlign: 'right',
-            borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
-            fontVariantNumeric: 'tabular-nums', fontSize: '0.78rem',
-            fontWeight: bold ? 600 : 500, color: chg.color,
-          }}>
-            {chg.text}
-          </td>
-        );
+      if (!totalsOnly) {
+        for (const yr of years) {
+          const val = monthData[m]?.[yr] || 0;
+          cells.push(
+            <td key={`${m}-${yr}`} style={{
+              padding: '8px 10px', textAlign: 'right',
+              borderLeft: yr === years[0] ? '1px solid #e5e7eb' : undefined,
+              borderBottom: '1px solid #e5e7eb',
+              fontVariantNumeric: 'tabular-nums',
+              fontWeight: bold ? 700 : 400,
+              fontSize: '0.85rem',
+            }}>
+              {val > 0 ? val.toLocaleString() : <span style={{ color: '#d1d5db' }}>-</span>}
+            </td>
+          );
+        }
+        // % change: latest year vs first year
+        if (numYears > 1) {
+          const first = monthData[m]?.[years[0]] || 0;
+          const last = monthData[m]?.[years[numYears - 1]] || 0;
+          const chg = pctChange(first, last);
+          cells.push(
+            <td key={`${m}-chg`} style={{
+              padding: '8px 8px', textAlign: 'right',
+              borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+              fontVariantNumeric: 'tabular-nums', fontSize: '0.78rem',
+              fontWeight: bold ? 600 : 500, color: chg.color,
+            }}>
+              {chg.text}
+            </td>
+          );
+        }
       }
     }
 
@@ -99,11 +105,11 @@ export default function YoYTable({ title, accentColor, rows, years, months, tabl
         cells.push(
           <td key={`ytd-${yr}`} style={{
             padding: '8px 10px', textAlign: 'right',
-            borderLeft: yr === years[0] ? '2px solid #d1d5db' : undefined,
+            borderLeft: yr === years[0] && !totalsOnly ? '2px solid #d1d5db' : yr === years[0] ? '1px solid #e5e7eb' : undefined,
             borderBottom: '1px solid #e5e7eb',
             fontVariantNumeric: 'tabular-nums',
             fontWeight: bold ? 700 : 600,
-            backgroundColor: '#fafafa',
+            backgroundColor: totalsOnly ? undefined : '#fafafa',
             fontSize: '0.85rem',
           }}>
             {ytdByYear[yr] > 0 ? ytdByYear[yr].toLocaleString() : <span style={{ color: '#d1d5db' }}>-</span>}
@@ -141,20 +147,20 @@ export default function YoYTable({ title, accentColor, rows, years, months, tabl
               <th rowSpan={2} style={{ padding: '10px 12px', textAlign: 'left', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb', minWidth: 180 }}>
                 Category
               </th>
-              {months.map(m => (
+              {!totalsOnly && months.map(m => (
                 <th key={m} colSpan={colsPerMonth} style={{ padding: '8px 10px', textAlign: 'center', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderLeft: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>
                   {MONTH_NAMES[m]}
                 </th>
               ))}
               {showYtd && (
-                <th colSpan={colsPerMonth} style={{ padding: '8px 10px', textAlign: 'center', backgroundColor: '#003D7A', color: 'white', fontWeight: 700, borderLeft: '2px solid rgba(255,255,255,0.4)', borderBottom: '1px solid #e5e7eb' }}>
-                  YTD
+                <th colSpan={colsPerMonth} style={{ padding: '8px 10px', textAlign: 'center', backgroundColor: '#003D7A', color: 'white', fontWeight: 700, borderLeft: totalsOnly ? undefined : '2px solid rgba(255,255,255,0.4)', borderBottom: '1px solid #e5e7eb' }}>
+                  {totalsOnly ? 'Total' : 'YTD'}
                 </th>
               )}
             </tr>
             {/* Year sub-header row */}
             <tr>
-              {[...months, ...(showYtd ? [-1] : [])].map((m, mi) => {
+              {[...(totalsOnly ? [] : months), ...(showYtd ? [-1] : [])].map((m, mi) => {
                 const isYtd = m === -1;
                 return (
                   <React.Fragment key={mi}>

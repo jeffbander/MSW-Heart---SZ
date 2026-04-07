@@ -80,6 +80,7 @@ export default function YearOverYearPage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'monthly' | 'totals'>('monthly');
 
   const availableYears = [...new Set(availableMonths.map(m => new Date(m + 'T00:00:00').getFullYear()))].sort();
 
@@ -273,6 +274,21 @@ export default function YearOverYearPage() {
               </select>
             </div>
 
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setViewMode('monthly')}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${viewMode === 'monthly' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}
+              >
+                Monthly
+              </button>
+              <button
+                onClick={() => setViewMode('totals')}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${viewMode === 'totals' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}
+              >
+                Totals Only
+              </button>
+            </div>
+
             {selectedYears.map((yr, idx) => (
               <div key={idx} className="flex items-center gap-1">
                 <label className="text-xs font-medium text-gray-500">Y{idx + 1}:</label>
@@ -368,6 +384,7 @@ export default function YearOverYearPage() {
                   years={activeYears}
                   months={data.months}
                   tableId="yoy-office-table"
+                  totalsOnly={viewMode === 'totals'}
                 />
               </div>
 
@@ -389,6 +406,7 @@ export default function YearOverYearPage() {
                     years={activeYears}
                     months={data.months}
                     tableId="yoy-testing-table"
+                    totalsOnly={viewMode === 'totals'}
                   />
                 </div>
               </div>
