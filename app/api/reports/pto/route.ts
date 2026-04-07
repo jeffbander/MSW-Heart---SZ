@@ -22,7 +22,12 @@ interface PTORow {
     name: string;
     initials: string;
     work_days: number[];
-  };
+  } | {
+    id: string;
+    name: string;
+    initials: string;
+    work_days: number[];
+  }[];
 }
 
 interface DayEntry {
