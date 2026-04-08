@@ -10,6 +10,8 @@ interface MonthMetrics {
   noShowRate: number;
   lateCancelRate: number;
   totalOrders: number;
+  sessionsCount: number;
+  avgPatientsPerSession: number;
 }
 
 interface ProviderData {
@@ -34,6 +36,8 @@ const METRICS: { key: MetricKey; label: string; shortLabel: string; format: (v: 
   { key: 'newPatientPct', label: 'New Patient %', shortLabel: 'New Pt %', format: v => `${v}%`, isPercentage: true },
   { key: 'noShowRate', label: 'No Show Rate', shortLabel: 'No Show %', format: v => `${v}%`, isPercentage: true, lowerIsBetter: true },
   { key: 'lateCancelRate', label: 'Late Cancel Rate', shortLabel: 'Late Cancel %', format: v => `${v}%`, isPercentage: true, lowerIsBetter: true },
+  { key: 'sessionsCount', label: 'Sessions', shortLabel: 'Sessions', format: v => v.toLocaleString(), isPercentage: false },
+  { key: 'avgPatientsPerSession', label: 'Patients per Session', shortLabel: 'Pts/Session', format: v => v.toFixed(1), isPercentage: false },
   { key: 'totalOrders', label: 'Total Orders', shortLabel: 'Orders', format: v => v.toLocaleString(), isPercentage: false },
 ];
 
@@ -91,6 +95,11 @@ export default function ProviderMultiMonthTable({ providers, months, priorMonths
 
   // Compute YTD
   function getYtdValue(provMonths: Record<string, MonthMetrics>, monthList: string[]): number {
+    if (metric.key === 'avgPatientsPerSession') {
+      const totalPatients = monthList.reduce((s, m) => s + (provMonths[m]?.patientsSeenExclAncillary ?? 0), 0);
+      const totalSessions = monthList.reduce((s, m) => s + (provMonths[m]?.sessionsCount ?? 0), 0);
+      return totalSessions > 0 ? Number((totalPatients / totalSessions).toFixed(1)) : 0;
+    }
     if (metric.isPercentage) {
       let weightedSum = 0, totalWeight = 0;
       for (const m of monthList) {

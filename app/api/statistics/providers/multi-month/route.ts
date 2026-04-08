@@ -45,7 +45,11 @@ interface MonthMetrics {
   noShowRate: number;
   lateCancelRate: number;
   totalOrders: number;
+  sessionsCount: number;
+  avgPatientsPerSession: number;
 }
+
+interface AssignmentRow { provider_id: string; date: string; }
 
 // GET /api/statistics/providers/multi-month?startMonth=2026-01-01&endMonth=2026-03-01
 export async function GET(request: NextRequest) {
@@ -112,6 +116,39 @@ export async function GET(request: NextRequest) {
       ),
     ]);
 
+    // Fetch sessions (Rooms AM/PM assignments)
+    const { data: services } = await supabase
+      .from('services')
+      .select('id')
+      .in('name', ['Rooms AM', 'Rooms PM']);
+    const serviceIds = (services || []).map((s: { id: string }) => s.id);
+
+    // Build sessions map: provider -> month -> Set of dates
+    const sessionsMap: Record<string, Record<string, Set<string>>> = {};
+    if (serviceIds.length > 0) {
+      const sorted = [...allMonths].sort();
+      const firstMonth = sorted[0];
+      const lastMonth = sorted[sorted.length - 1];
+      const endDate = new Date(lastMonth + 'T00:00:00');
+      endDate.setMonth(endDate.getMonth() + 1);
+
+      const { data: assignments } = await supabase
+        .from('schedule_assignments')
+        .select('provider_id, date')
+        .in('service_id', serviceIds)
+        .gte('date', firstMonth)
+        .lt('date', endDate.toISOString().split('T')[0]);
+
+      for (const a of (assignments || []) as AssignmentRow[]) {
+        // Determine which month this date belongs to
+        const d = new Date(a.date + 'T00:00:00');
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+        if (!sessionsMap[a.provider_id]) sessionsMap[a.provider_id] = {};
+        if (!sessionsMap[a.provider_id][monthKey]) sessionsMap[a.provider_id][monthKey] = new Set();
+        sessionsMap[a.provider_id][monthKey].add(a.date);
+      }
+    }
+
     // For months with no completed source, derive from all_statuses (Completed + Arrived)
     // Check per-month: if a specific month has 0 completed rows, supplement from rateVisits
     for (const m of allMonths) {
@@ -147,7 +184,10 @@ export async function GET(request: NextRequest) {
 
         const totalOrders = orders.filter(o => o.ordering_provider_id === provId && o.report_month === m).length;
 
-        result[m] = { patientsSeenExclAncillary, newPatientPct, noShowRate, lateCancelRate, totalOrders };
+        const sessionsCount = sessionsMap[provId]?.[m]?.size || 0;
+        const avgPatientsPerSession = sessionsCount > 0 ? Number((patientsSeenExclAncillary / sessionsCount).toFixed(1)) : 0;
+
+        result[m] = { patientsSeenExclAncillary, newPatientPct, noShowRate, lateCancelRate, totalOrders, sessionsCount, avgPatientsPerSession };
       }
       return result;
     }
