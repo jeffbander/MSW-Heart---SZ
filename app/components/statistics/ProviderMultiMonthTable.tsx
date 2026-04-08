@@ -31,13 +31,24 @@ interface Props {
 
 type MetricKey = keyof MonthMetrics;
 
-const METRICS: { key: MetricKey; label: string; shortLabel: string; format: (v: number) => string; isPercentage: boolean; lowerIsBetter?: boolean }[] = [
+interface MetricDef {
+  key: MetricKey;
+  label: string;
+  shortLabel: string;
+  format: (v: number) => string;
+  isPercentage: boolean;
+  lowerIsBetter?: boolean;
+  secondKey?: MetricKey; // combo: show a second metric below in same cell
+  secondFormat?: (v: number) => string;
+  secondLabel?: string;
+}
+
+const METRICS: MetricDef[] = [
   { key: 'patientsSeenExclAncillary', label: 'Patients Seen (excl. Ancillary)', shortLabel: 'Patients Seen', format: v => v.toLocaleString(), isPercentage: false },
   { key: 'newPatientPct', label: 'New Patient %', shortLabel: 'New Pt %', format: v => `${v}%`, isPercentage: true },
   { key: 'noShowRate', label: 'No Show Rate', shortLabel: 'No Show %', format: v => `${v}%`, isPercentage: true, lowerIsBetter: true },
   { key: 'lateCancelRate', label: 'Late Cancel Rate', shortLabel: 'Late Cancel %', format: v => `${v}%`, isPercentage: true, lowerIsBetter: true },
-  { key: 'sessionsCount', label: 'Sessions', shortLabel: 'Sessions', format: v => v.toLocaleString(), isPercentage: false },
-  { key: 'avgPatientsPerSession', label: 'Patients per Session', shortLabel: 'Pts/Session', format: v => v.toFixed(1), isPercentage: false },
+  { key: 'sessionsCount', label: 'Sessions & Pts/Session', shortLabel: 'Sessions', format: v => v.toLocaleString(), isPercentage: false, secondKey: 'avgPatientsPerSession', secondFormat: v => v.toFixed(1), secondLabel: 'pts/sess' },
   { key: 'totalOrders', label: 'Total Orders', shortLabel: 'Orders', format: v => v.toLocaleString(), isPercentage: false },
 ];
 
@@ -94,24 +105,26 @@ export default function ProviderMultiMonthTable({ providers, months, priorMonths
   const year = getYear(months[0]);
 
   // Compute YTD
-  function getYtdValue(provMonths: Record<string, MonthMetrics>, monthList: string[]): number {
-    if (metric.key === 'avgPatientsPerSession') {
+  function getYtdValue(provMonths: Record<string, MonthMetrics>, monthList: string[], overrideKey?: MetricKey): number {
+    const key = overrideKey || metric.key;
+    const metricDef = overrideKey ? METRICS.find(m => m.key === overrideKey) || metric : metric;
+    if (key === 'avgPatientsPerSession') {
       const totalPatients = monthList.reduce((s, m) => s + (provMonths[m]?.patientsSeenExclAncillary ?? 0), 0);
       const totalSessions = monthList.reduce((s, m) => s + (provMonths[m]?.sessionsCount ?? 0), 0);
       return totalSessions > 0 ? Number((totalPatients / totalSessions).toFixed(1)) : 0;
     }
-    if (metric.isPercentage) {
+    if (metricDef.isPercentage) {
       let weightedSum = 0, totalWeight = 0;
       for (const m of monthList) {
         const d = provMonths[m];
         if (!d || d.patientsSeenExclAncillary === 0) continue;
         const w = d.patientsSeenExclAncillary;
-        weightedSum += d[metric.key] * w;
+        weightedSum += d[key] * w;
         totalWeight += w;
       }
       return totalWeight > 0 ? Number((weightedSum / totalWeight).toFixed(1)) : 0;
     }
-    return monthList.reduce((s, m) => s + (provMonths[m]?.[metric.key] ?? 0), 0);
+    return monthList.reduce((s, m) => s + (provMonths[m]?.[key] ?? 0), 0);
   }
 
   return (
@@ -175,31 +188,53 @@ export default function ProviderMultiMonthTable({ providers, months, priorMonths
                   {months.map((m, mi) => {
                     const current = p.months[m]?.[metric.key] ?? 0;
                     const prior = p.priorYearMonths[priorMonths[mi]]?.[metric.key] ?? 0;
+                    const sec = metric.secondKey ? (p.months[m]?.[metric.secondKey] ?? 0) : 0;
+                    const secPrior = metric.secondKey ? (p.priorYearMonths[priorMonths[mi]]?.[metric.secondKey] ?? 0) : 0;
                     return (
-                      <td key={m} className="text-center px-3 py-2.5 tabular-nums" style={{ borderLeft: mi === 0 ? '2px solid #e5e7eb' : '1px solid #f3f4f6' }}>
+                      <td key={m} className="text-center px-3 py-2 tabular-nums" style={{ borderLeft: mi === 0 ? '2px solid #e5e7eb' : '1px solid #f3f4f6' }}>
                         {current === 0 ? (
                           <span className="text-gray-300">-</span>
                         ) : (
-                          <span className="inline-flex items-center justify-center">
-                            <span className="font-medium text-gray-800">{metric.format(current)}</span>
-                            <ChangeArrow current={current} prior={prior} isPercentage={metric.isPercentage} lowerIsBetter={metric.lowerIsBetter} />
-                          </span>
+                          <div>
+                            <span className="inline-flex items-center justify-center">
+                              <span className="font-medium text-gray-800">{metric.format(current)}</span>
+                              <ChangeArrow current={current} prior={prior} isPercentage={metric.isPercentage} lowerIsBetter={metric.lowerIsBetter} />
+                            </span>
+                            {metric.secondKey && sec > 0 && (
+                              <div className="text-[11px] text-gray-500 mt-0.5">
+                                <span>{metric.secondFormat!(sec)}</span>
+                                <span className="text-gray-400 ml-0.5">{metric.secondLabel}</span>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </td>
                     );
                   })}
-                  {showYtd && (
-                    <td className="text-center px-3 py-2.5 font-semibold tabular-nums" style={{ borderLeft: '2px solid #d1d5db', backgroundColor: idx % 2 === 0 ? '#f8fafc' : '#f1f5f9' }}>
-                      {ytdCurrent === 0 && ytdPrior === 0 ? (
-                        <span className="text-gray-300">-</span>
-                      ) : (
-                        <span className="inline-flex items-center justify-center">
-                          <span className="text-gray-800">{metric.format(ytdCurrent)}</span>
-                          <ChangeArrow current={ytdCurrent} prior={ytdPrior} isPercentage={metric.isPercentage} lowerIsBetter={metric.lowerIsBetter} />
-                        </span>
-                      )}
-                    </td>
-                  )}
+                  {showYtd && (() => {
+                    const ytdSec = metric.secondKey ? getYtdValue(p.months, months, metric.secondKey) : 0;
+                    const ytdSecPrior = metric.secondKey ? getYtdValue(p.priorYearMonths, priorMonths, metric.secondKey) : 0;
+                    return (
+                      <td className="text-center px-3 py-2 font-semibold tabular-nums" style={{ borderLeft: '2px solid #d1d5db', backgroundColor: idx % 2 === 0 ? '#f8fafc' : '#f1f5f9' }}>
+                        {ytdCurrent === 0 && ytdPrior === 0 ? (
+                          <span className="text-gray-300">-</span>
+                        ) : (
+                          <div>
+                            <span className="inline-flex items-center justify-center">
+                              <span className="text-gray-800">{metric.format(ytdCurrent)}</span>
+                              <ChangeArrow current={ytdCurrent} prior={ytdPrior} isPercentage={metric.isPercentage} lowerIsBetter={metric.lowerIsBetter} />
+                            </span>
+                            {metric.secondKey && ytdSec > 0 && (
+                              <div className="text-[11px] text-gray-500 mt-0.5">
+                                <span>{metric.secondFormat!(ytdSec)}</span>
+                                <span className="text-gray-400 ml-0.5">{metric.secondLabel}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })()}
                 </tr>
               );
             })}
