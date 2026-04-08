@@ -69,6 +69,7 @@ interface RateVisitRow {
   primary_provider_id: string;
   appointment_status: string;
   late_cancel: number;
+  visit_type_category?: string;
 }
 
 interface OrderRow {
@@ -123,7 +124,7 @@ async function buildComparisonData(months: string | string[]): Promise<Compariso
   const typedProviders = providers as ProviderRow[];
 
   // 2. Fetch ALL completed office visits for these months (bulk)
-  const completedVisits = await fetchAll<CompletedVisitRow>(
+  let completedVisits = await fetchAll<CompletedVisitRow>(
     'stat_office_visits',
     'primary_provider_id, visit_type_category',
     { source_type: 'completed' },
@@ -133,7 +134,7 @@ async function buildComparisonData(months: string | string[]): Promise<Compariso
   // 3. Fetch ALL all_statuses office visits for rates (bulk)
   let rateVisits = await fetchAll<RateVisitRow>(
     'stat_office_visits',
-    'primary_provider_id, appointment_status, late_cancel',
+    'primary_provider_id, appointment_status, late_cancel, visit_type_category',
     { source_type: 'all_statuses' },
     { report_month: monthArr }
   );
@@ -141,10 +142,21 @@ async function buildComparisonData(months: string | string[]): Promise<Compariso
   if (rateVisits.length === 0) {
     rateVisits = await fetchAll<RateVisitRow>(
       'stat_office_visits',
-      'primary_provider_id, appointment_status, late_cancel',
+      'primary_provider_id, appointment_status, late_cancel, visit_type_category',
       {},
       { report_month: monthArr }
     );
+  }
+
+  // If no completed source data, derive completed visits from all_statuses
+  // (Completed + Arrived = seen)
+  if (completedVisits.length === 0 && rateVisits.length > 0) {
+    completedVisits = rateVisits
+      .filter(v => v.appointment_status === 'Completed' || v.appointment_status === 'Arrived')
+      .map(v => ({
+        primary_provider_id: v.primary_provider_id,
+        visit_type_category: (v as any).visit_type_category || 'Unknown',
+      }));
   }
 
   // 4. Fetch ALL orders

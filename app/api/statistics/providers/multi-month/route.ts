@@ -36,7 +36,7 @@ const VISIT_CATEGORIES = ['New Patient', 'Follow Up', 'Leqvio', 'Research', 'Vid
 
 interface ProviderRow { id: string; name: string; initials: string; }
 interface CompletedVisitRow { primary_provider_id: string; visit_type_category: string; report_month: string; }
-interface RateVisitRow { primary_provider_id: string; appointment_status: string; late_cancel: number; report_month: string; }
+interface RateVisitRow { primary_provider_id: string; appointment_status: string; late_cancel: number; report_month: string; visit_type_category?: string; }
 interface OrderRow { ordering_provider_id: string; report_month: string; }
 
 interface MonthMetrics {
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
     const typedProviders = (providers || []) as ProviderRow[];
 
     // Fetch all data for both years in one go
-    const [completedVisits, rateVisits, orders] = await Promise.all([
+    let [completedVisits, rateVisits, orders] = await Promise.all([
       fetchAll<CompletedVisitRow>(
         'stat_office_visits',
         'primary_provider_id, visit_type_category, report_month',
@@ -90,14 +90,14 @@ export async function GET(request: NextRequest) {
       ),
       fetchAll<RateVisitRow>(
         'stat_office_visits',
-        'primary_provider_id, appointment_status, late_cancel, report_month',
+        'primary_provider_id, appointment_status, late_cancel, report_month, visit_type_category',
         { source_type: 'all_statuses' },
         { report_month: allMonths }
       ).then(async rows => {
         if (rows.length === 0) {
           return fetchAll<RateVisitRow>(
             'stat_office_visits',
-            'primary_provider_id, appointment_status, late_cancel, report_month',
+            'primary_provider_id, appointment_status, late_cancel, report_month, visit_type_category',
             {},
             { report_month: allMonths }
           );
@@ -111,6 +111,22 @@ export async function GET(request: NextRequest) {
         { report_month: allMonths }
       ),
     ]);
+
+    // For months with no completed source, derive from all_statuses (Completed + Arrived)
+    // Check per-month: if a specific month has 0 completed rows, supplement from rateVisits
+    for (const m of allMonths) {
+      const hasCompleted = completedVisits.some(v => v.report_month === m);
+      if (!hasCompleted) {
+        const derived = rateVisits
+          .filter(v => v.report_month === m && (v.appointment_status === 'Completed' || v.appointment_status === 'Arrived'))
+          .map(v => ({
+            primary_provider_id: v.primary_provider_id,
+            visit_type_category: (v as any).visit_type_category || 'Unknown',
+            report_month: m,
+          }));
+        completedVisits.push(...derived);
+      }
+    }
 
     // Build per-provider, per-month metrics
     function buildMetrics(provId: string, monthList: string[]): Record<string, MonthMetrics> {

@@ -82,7 +82,7 @@ async function getProviderStats(providerId: string, months: string | string[]) {
 
   // 1. Fetch completed office visits for patient volumes
   //    source_type='completed' — every row IS a seen visit
-  const completedVisits = await fetchAll<CompletedVisitRow>(
+  let completedVisits = await fetchAll<CompletedVisitRow>(
     'stat_office_visits',
     'visit_type_category, visit_type_raw',
     { source_type: 'completed', primary_provider_id: providerId },
@@ -105,6 +105,13 @@ async function getProviderStats(providerId: string, months: string | string[]) {
       { primary_provider_id: providerId },
       { report_month: monthArr }
     );
+  }
+
+  // If no completed source, derive from all_statuses (Completed + Arrived = seen)
+  if (completedVisits.length === 0 && allStatusVisits.length > 0) {
+    completedVisits = allStatusVisits
+      .filter(v => v.appointment_status === 'Completed' || v.appointment_status === 'Arrived')
+      .map(v => ({ visit_type_category: v.visit_type_category, visit_type_raw: v.visit_type_raw }));
   }
 
   // 3. Fetch sessions from schedule_assignments (Rooms AM / Rooms PM)
