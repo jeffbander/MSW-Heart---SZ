@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import StatisticsNav from '@/app/components/statistics/StatisticsNav';
 
@@ -371,94 +371,85 @@ export default function TestingAnalyticsPage() {
                 </div>
               </button>
               {sectionsExpanded.volume && (
-                <table className="w-full">
+                <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'white', fontSize: '0.875rem', border: '1px solid #d1d5db' }}>
                   <thead>
-                    <tr className="border-b bg-gray-50">
-                      <th className="px-5 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th>
-                      <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Completed</th>
-                      <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">% of Total</th>
-                      <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">No Show %</th>
-                      <th className="px-5 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Late Cancel %</th>
+                    <tr>
+                      <th style={{ padding: '10px 12px', textAlign: 'left', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }}>Department</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>Completed</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>% of Total</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>No Show %</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>Late Cancel %</th>
                       {hasComparison && comparisons.map((c, i) => (
-                        <th key={i} className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <th key={i} style={{ padding: '10px 12px', textAlign: 'right', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>
                           {c.year ? `vs ${c.year}` : 'Change'}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody>
                     {sortedDepts.map((dept, deptIdx) => {
                       const stats = overview.departments[dept];
-                      const compStats = overview.comparison?.[dept];
                       const isExpanded = expandedDeptVisitTypes.has(dept);
                       const visitTypeEntries = Object.entries(stats.visitTypes).sort(([, a], [, b]) => b - a);
+                      const rowBg = deptIdx % 2 === 1 ? '#fafafa' : 'white';
+                      const cellBase: React.CSSProperties = { padding: '8px 12px', borderBottom: '1px solid #e5e7eb', fontVariantNumeric: 'tabular-nums', fontSize: '0.875rem' };
 
                       return (
-                        <tr key={dept}>
-                          <td colSpan={5 + numComparisons} className="p-0">
-                            <table className="w-full">
-                              <tbody>
-                                <tr
-                                  className={`cursor-pointer hover:bg-gray-50 transition-colors duration-150 ${deptIdx % 2 === 1 ? 'bg-gray-50/50' : ''}`}
-                                  onClick={() => toggleDeptExpand(dept)}
-                                >
-                                  <td className="px-5 py-3 text-sm font-medium text-gray-900 w-[25%]">
-                                    <span className="flex items-center gap-2">
-                                      <ChevronIcon expanded={isExpanded} />
-                                      {dept}
-                                    </span>
-                                  </td>
-                                  <td className="px-5 py-3 text-sm text-gray-700 text-right w-[15%]">
-                                    {stats.completed.toLocaleString()}
-                                  </td>
-                                  <td className="px-5 py-3 text-sm text-gray-400 text-right w-[12%]">
-                                    {totalCompleted > 0 ? `${((stats.completed / totalCompleted) * 100).toFixed(1)}%` : '--'}
-                                  </td>
-                                  <td className="px-5 py-3 text-sm text-gray-500 text-right w-[14%]">
-                                    {stats.noShowRate}%
-                                  </td>
-                                  <td className="px-5 py-3 text-sm text-gray-500 text-right w-[14%]">
-                                    {stats.lateCancelRate}%
-                                  </td>
-                                  {hasComparison && comparisons.map((c, ci) => {
-                                    const cs = c.data[dept];
-                                    return (
-                                      <td key={ci} className={`px-4 py-3 text-sm text-right font-medium ${formatChange(stats.completed, cs?.completed || 0).color}`}>
-                                        {formatChange(stats.completed, cs?.completed || 0).text}
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                                {isExpanded && visitTypeEntries.map(([vt, count]) => (
-                                  <tr key={vt} className="bg-gray-50/50 border-l-2 border-[#003D7A]/20">
-                                    <td className="pl-14 pr-5 py-2 text-sm text-gray-600 w-[25%]">{vt}</td>
-                                    <td className="px-5 py-2 text-sm text-gray-500 text-right w-[15%]">{count.toLocaleString()}</td>
-                                    <td className="px-5 py-2 text-sm text-gray-400 text-right w-[12%]">
-                                      {stats.completed > 0 ? `${((count / stats.completed) * 100).toFixed(1)}%` : '--'}
-                                    </td>
-                                    <td className="px-5 py-2 w-[14%]"></td>
-                                    <td className="px-5 py-2 w-[14%]"></td>
-                                    {hasComparison && comparisons.map((_, ci) => <td key={ci} className="px-4 py-2"></td>)}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </td>
-                        </tr>
+                        <React.Fragment key={dept}>
+                          <tr style={{ backgroundColor: rowBg, cursor: 'pointer' }} onClick={() => toggleDeptExpand(dept)}>
+                            <td style={{ ...cellBase, fontWeight: 500, color: '#111827', borderRight: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>
+                              <span className="flex items-center gap-2">
+                                <ChevronIcon expanded={isExpanded} />
+                                {dept}
+                              </span>
+                            </td>
+                            <td style={{ ...cellBase, textAlign: 'right', color: '#374151' }}>{stats.completed.toLocaleString()}</td>
+                            <td style={{ ...cellBase, textAlign: 'right', color: '#6b7280' }}>
+                              {totalCompleted > 0 ? `${((stats.completed / totalCompleted) * 100).toFixed(1)}%` : '--'}
+                            </td>
+                            <td style={{ ...cellBase, textAlign: 'right', color: '#6b7280' }}>{stats.noShowRate}%</td>
+                            <td style={{ ...cellBase, textAlign: 'right', color: '#6b7280' }}>{stats.lateCancelRate}%</td>
+                            {hasComparison && comparisons.map((c, ci) => {
+                              const cs = c.data[dept];
+                              const chg = formatChange(stats.completed, cs?.completed || 0);
+                              const color = chg.color === 'text-green-600' ? '#16a34a' : chg.color === 'text-red-600' ? '#dc2626' : '#9ca3af';
+                              return (
+                                <td key={ci} style={{ ...cellBase, textAlign: 'right', fontWeight: 500, color }}>
+                                  {chg.text}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                          {isExpanded && visitTypeEntries.map(vt => (
+                            <tr key={vt[0]} style={{ backgroundColor: '#f9fafb' }}>
+                              <td style={{ padding: '6px 12px 6px 44px', fontWeight: 400, color: '#6b7280', fontSize: '0.8rem', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>
+                                {vt[0]}
+                              </td>
+                              <td style={{ ...cellBase, textAlign: 'right', color: '#6b7280', fontSize: '0.8rem' }}>{vt[1].toLocaleString()}</td>
+                              <td style={{ ...cellBase, textAlign: 'right', color: '#9ca3af', fontSize: '0.8rem' }}>
+                                {stats.completed > 0 ? `${((vt[1] / stats.completed) * 100).toFixed(1)}%` : '--'}
+                              </td>
+                              <td style={{ ...cellBase }}></td>
+                              <td style={{ ...cellBase }}></td>
+                              {hasComparison && comparisons.map((_, ci) => <td key={ci} style={{ ...cellBase }}></td>)}
+                            </tr>
+                          ))}
+                        </React.Fragment>
                       );
                     })}
-                    {/* Totals row */}
-                    <tr className="bg-gray-100 border-t-2 border-gray-300 font-bold">
-                      <td className="px-5 py-3 text-sm text-gray-700">Total</td>
-                      <td className="px-5 py-3 text-sm text-gray-700 text-right">{totalCompleted.toLocaleString()}</td>
-                      <td className="px-5 py-3 text-sm text-gray-400 text-right">100%</td>
-                      <td className="px-5 py-3"></td>
-                      <td className="px-5 py-3"></td>
+                    <tr style={{ backgroundColor: '#f3f4f6', borderTop: '2px solid #9ca3af' }}>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: '#111827', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #d1d5db' }}>TOTAL</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#111827', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #d1d5db' }}>{totalCompleted.toLocaleString()}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#6b7280', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #d1d5db' }}>100%</td>
+                      <td style={{ padding: '10px 12px', borderBottom: '1px solid #d1d5db' }}></td>
+                      <td style={{ padding: '10px 12px', borderBottom: '1px solid #d1d5db' }}></td>
                       {hasComparison && comparisons.map((c, ci) => {
                         const compTotal = sortedDepts.reduce((s, d) => s + (c.data[d]?.completed || 0), 0);
+                        const chg = formatChange(totalCompleted, compTotal);
+                        const color = chg.color === 'text-green-600' ? '#16a34a' : chg.color === 'text-red-600' ? '#dc2626' : '#9ca3af';
                         return (
-                          <td key={ci} className={`px-4 py-3 text-sm text-right font-medium ${formatChange(totalCompleted, compTotal).color}`}>
-                            {formatChange(totalCompleted, compTotal).text}
+                          <td key={ci} style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color, fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #d1d5db' }}>
+                            {chg.text}
                           </td>
                         );
                       })}
@@ -519,51 +510,48 @@ export default function TestingAnalyticsPage() {
                           {dept.totalOrders === 0 ? (
                             <p className="text-sm text-gray-400 italic">No orders data for this period</p>
                           ) : (
-                          <table className="w-full">
+                          <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'white', fontSize: '0.875rem', border: '1px solid #d1d5db' }}>
                             <thead>
-                              <tr className="border-b">
-                                <th className="pb-2 text-left text-xs font-semibold text-gray-500 uppercase">Provider</th>
-                                <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">Orders</th>
-                                <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">% of Dept</th>
+                              <tr>
+                                <th style={{ padding: '8px 12px', textAlign: 'left', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>Provider</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'right', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>Orders</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'right', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderBottom: '1px solid #e5e7eb' }}>% of Dept</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-50">
+                            <tbody>
                               {dept.internalProviders.map((p, i) => (
-                                <tr key={p.name} className={`hover:bg-gray-50 transition-colors ${i % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
-                                  <td className="py-2 text-sm text-gray-900">{p.name}</td>
-                                  <td className="py-2 text-sm text-gray-700 text-right">{p.count.toLocaleString()}</td>
-                                  <td className="py-2 text-sm text-gray-400 text-right">
+                                <tr key={p.name} style={{ backgroundColor: i % 2 === 1 ? '#fafafa' : 'white' }}>
+                                  <td style={{ padding: '6px 12px', color: '#111827', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }}>{p.name}</td>
+                                  <td style={{ padding: '6px 12px', textAlign: 'right', color: '#374151', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #e5e7eb' }}>{p.count.toLocaleString()}</td>
+                                  <td style={{ padding: '6px 12px', textAlign: 'right', color: '#6b7280', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #e5e7eb' }}>
                                     {dept.totalOrders > 0 ? `${((p.count / dept.totalOrders) * 100).toFixed(1)}%` : '--'}
                                   </td>
                                 </tr>
                               ))}
                               {dept.outsideTotal > 0 && (
-                                <>
-                                  <tr
-                                    className="cursor-pointer hover:bg-gray-50 bg-amber-50/50 transition-colors"
-                                    onClick={() => toggleOrdersOutside(dept.department)}
-                                  >
-                                    <td className="py-2 text-sm font-medium text-gray-700">
+                                <React.Fragment>
+                                  <tr style={{ backgroundColor: '#fffbeb', cursor: 'pointer' }} onClick={() => toggleOrdersOutside(dept.department)}>
+                                    <td style={{ padding: '6px 12px', fontWeight: 500, color: '#374151', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }}>
                                       <span className="flex items-center gap-2">
                                         <ChevronIcon expanded={outsideExpanded} />
                                         Outside Providers
                                       </span>
                                     </td>
-                                    <td className="py-2 text-sm text-gray-700 text-right font-medium">{dept.outsideTotal.toLocaleString()}</td>
-                                    <td className="py-2 text-sm text-gray-400 text-right">
+                                    <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 500, color: '#374151', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #e5e7eb' }}>{dept.outsideTotal.toLocaleString()}</td>
+                                    <td style={{ padding: '6px 12px', textAlign: 'right', color: '#6b7280', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #e5e7eb' }}>
                                       {dept.totalOrders > 0 ? `${((dept.outsideTotal / dept.totalOrders) * 100).toFixed(1)}%` : '--'}
                                     </td>
                                   </tr>
                                   {outsideExpanded && dept.outsideProviders.map(p => (
-                                    <tr key={p.name} className="bg-amber-50/30 border-l-2 border-amber-200">
-                                      <td className="pl-10 py-1.5 text-sm text-gray-600">{p.name}</td>
-                                      <td className="py-1.5 text-sm text-gray-500 text-right">{p.count.toLocaleString()}</td>
-                                      <td className="py-1.5 text-sm text-gray-400 text-right">
+                                    <tr key={p.name} style={{ backgroundColor: '#fef3c7' }}>
+                                      <td style={{ padding: '4px 12px 4px 32px', fontSize: '0.8rem', color: '#6b7280', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }}>{p.name}</td>
+                                      <td style={{ padding: '4px 12px', textAlign: 'right', fontSize: '0.8rem', color: '#6b7280', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #e5e7eb' }}>{p.count.toLocaleString()}</td>
+                                      <td style={{ padding: '4px 12px', textAlign: 'right', fontSize: '0.8rem', color: '#9ca3af', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #e5e7eb' }}>
                                         {dept.totalOrders > 0 ? `${((p.count / dept.totalOrders) * 100).toFixed(1)}%` : '--'}
                                       </td>
                                     </tr>
                                   ))}
-                                </>
+                                </React.Fragment>
                               )}
                             </tbody>
                           </table>
@@ -619,57 +607,54 @@ export default function TestingAnalyticsPage() {
                           {dept.internalProviders.length === 0 && dept.outsideTotal === 0 ? (
                             <p className="text-sm text-gray-400 italic">No referral data for this period</p>
                           ) : (
-                          <table className="w-full">
+                          <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'white', fontSize: '0.875rem', border: '1px solid #d1d5db' }}>
                             <thead>
-                              <tr className="border-b">
-                                <th className="pb-2 text-left text-xs font-semibold text-gray-500 uppercase">Referring Provider</th>
-                                <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">Referrals</th>
-                                <th className="pb-2 text-right text-xs font-semibold text-gray-500 uppercase">% of Dept</th>
+                              <tr>
+                                <th style={{ padding: '8px 12px', textAlign: 'left', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>Referring Provider</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'right', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid #e5e7eb' }}>Referrals</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'right', backgroundColor: '#003D7A', color: 'white', fontWeight: 600, borderBottom: '1px solid #e5e7eb' }}>% of Dept</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-50">
+                            <tbody>
                               {dept.internalProviders.map((p, i) => (
-                                <tr key={p.name} className={`hover:bg-gray-50 transition-colors ${i % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
-                                  <td className="py-2 text-sm text-gray-900">{p.name}</td>
-                                  <td className="py-2 text-sm text-gray-700 text-right">
+                                <tr key={p.name} style={{ backgroundColor: i % 2 === 1 ? '#fafafa' : 'white' }}>
+                                  <td style={{ padding: '6px 12px', color: '#111827', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }}>{p.name}</td>
+                                  <td style={{ padding: '6px 12px', textAlign: 'right', color: '#374151', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #e5e7eb' }}>
                                     {p.count.toLocaleString()} of {dept.totalStudies.toLocaleString()}
                                   </td>
-                                  <td className="py-2 text-sm text-right" style={{ color: colors.teal }}>
+                                  <td style={{ padding: '6px 12px', textAlign: 'right', color: colors.teal, fontVariantNumeric: 'tabular-nums', fontWeight: 500, borderBottom: '1px solid #e5e7eb' }}>
                                     {p.percentage}%
                                   </td>
                                 </tr>
                               ))}
                               {dept.outsideTotal > 0 && (
-                                <>
-                                  <tr
-                                    className="cursor-pointer hover:bg-gray-50 bg-amber-50/50 transition-colors"
-                                    onClick={() => toggleReferralsOutside(dept.department)}
-                                  >
-                                    <td className="py-2 text-sm font-medium text-gray-700">
+                                <React.Fragment>
+                                  <tr style={{ backgroundColor: '#fffbeb', cursor: 'pointer' }} onClick={() => toggleReferralsOutside(dept.department)}>
+                                    <td style={{ padding: '6px 12px', fontWeight: 500, color: '#374151', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }}>
                                       <span className="flex items-center gap-2">
                                         <ChevronIcon expanded={outsideExpanded} />
                                         Outside Providers
                                       </span>
                                     </td>
-                                    <td className="py-2 text-sm text-gray-700 text-right font-medium">
+                                    <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: 500, color: '#374151', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #e5e7eb' }}>
                                       {dept.outsideTotal.toLocaleString()} of {dept.totalStudies.toLocaleString()}
                                     </td>
-                                    <td className="py-2 text-sm text-right" style={{ color: colors.teal }}>
+                                    <td style={{ padding: '6px 12px', textAlign: 'right', color: colors.teal, fontVariantNumeric: 'tabular-nums', fontWeight: 500, borderBottom: '1px solid #e5e7eb' }}>
                                       {dept.outsidePercentage}%
                                     </td>
                                   </tr>
                                   {outsideExpanded && dept.outsideProviders.map(p => (
-                                    <tr key={p.name} className="bg-amber-50/30 border-l-2 border-amber-200">
-                                      <td className="pl-10 py-1.5 text-sm text-gray-600">{p.name}</td>
-                                      <td className="py-1.5 text-sm text-gray-500 text-right">
+                                    <tr key={p.name} style={{ backgroundColor: '#fef3c7' }}>
+                                      <td style={{ padding: '4px 12px 4px 32px', fontSize: '0.8rem', color: '#6b7280', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }}>{p.name}</td>
+                                      <td style={{ padding: '4px 12px', textAlign: 'right', fontSize: '0.8rem', color: '#6b7280', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #e5e7eb' }}>
                                         {p.count.toLocaleString()} of {dept.totalStudies.toLocaleString()}
                                       </td>
-                                      <td className="py-1.5 text-sm text-gray-400 text-right">
+                                      <td style={{ padding: '4px 12px', textAlign: 'right', fontSize: '0.8rem', color: '#9ca3af', fontVariantNumeric: 'tabular-nums', borderBottom: '1px solid #e5e7eb' }}>
                                         {p.percentage}%
                                       </td>
                                     </tr>
                                   ))}
-                                </>
+                                </React.Fragment>
                               )}
                             </tbody>
                           </table>
