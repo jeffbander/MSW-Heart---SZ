@@ -988,6 +988,66 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     }
   };
 
+  const [clearWeekState, setClearWeekState] = useState<'idle' | 'confirm' | 'loading'>('idle');
+
+  const handleClearWeek = async () => {
+    if (clearWeekState === 'idle') {
+      setClearWeekState('confirm');
+      setTimeout(() => setClearWeekState(s => (s === 'confirm' ? 'idle' : s)), 4000);
+      return;
+    }
+    if (clearWeekState !== 'confirm') return;
+
+    setClearWeekState('loading');
+    try {
+      const weekDates = new Set(dateRange);
+      const weekItems = assignments.filter(a => weekDates.has(a.date));
+
+      if (weekItems.length === 0) {
+        setClearWeekState('idle');
+        return;
+      }
+
+      const ptoItems = weekItems.filter(a =>
+        a.is_pto || services.find(s => s.id === a.service_id)?.name === 'PTO'
+      );
+      const nonPtoItems = weekItems.filter(a => !ptoItems.includes(a));
+
+      const seenPto = new Set<string>();
+      await Promise.all(
+        ptoItems.map(a => {
+          const key = `${a.provider_id}|${a.date}|${a.time_block}`;
+          if (seenPto.has(key)) return Promise.resolve();
+          seenPto.add(key);
+          const params = new URLSearchParams({
+            providerId: a.provider_id,
+            date: a.date,
+            timeBlock: a.time_block,
+          });
+          return fetch(`/api/pto/delete?${params.toString()}`, { method: 'DELETE' });
+        })
+      );
+
+      await Promise.all(
+        nonPtoItems.map(a =>
+          fetch(`/api/assignments?id=${a.id}`, { method: 'DELETE' })
+        )
+      );
+
+      await fetchData();
+      const leavesResponse = await fetch(
+        `/api/leaves?startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`
+      );
+      const leavesData = await leavesResponse.json();
+      setProviderLeaves(Array.isArray(leavesData) ? leavesData : []);
+    } catch (error) {
+      console.error('Error clearing week:', error);
+      alert('Failed to clear week. Please try again.');
+    } finally {
+      setClearWeekState('idle');
+    }
+  };
+
   const handleRemoveAssignment = async (assignmentId: string) => {
     try {
       const response = await fetch(`/api/assignments?id=${assignmentId}`, {
@@ -1460,6 +1520,19 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
                 title="Apply alternating templates (Week A/B)"
               >
                 Alternating
+              </button>
+              <button
+                onClick={handleClearWeek}
+                disabled={clearWeekState === 'loading'}
+                className="px-3 py-2 rounded text-sm font-medium text-white hover:opacity-90 transition-colors disabled:opacity-50"
+                style={{ backgroundColor: clearWeekState === 'confirm' ? '#DC2626' : '#6B7280' }}
+                title="Delete all assignments and PTO for this week"
+              >
+                {clearWeekState === 'loading'
+                  ? 'Clearing...'
+                  : clearWeekState === 'confirm'
+                  ? 'Click again to confirm'
+                  : 'Clear Week'}
               </button>
             </div>
           )}
