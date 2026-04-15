@@ -1001,32 +1001,16 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
     setClearWeekState('loading');
     try {
       const weekDates = new Set(dateRange);
-      const weekItems = assignments.filter(a => weekDates.has(a.date));
+      const nonPtoItems = assignments.filter(a =>
+        weekDates.has(a.date) &&
+        !a.is_pto &&
+        services.find(s => s.id === a.service_id)?.name !== 'PTO'
+      );
 
-      if (weekItems.length === 0) {
+      if (nonPtoItems.length === 0) {
         setClearWeekState('idle');
         return;
       }
-
-      const ptoItems = weekItems.filter(a =>
-        a.is_pto || services.find(s => s.id === a.service_id)?.name === 'PTO'
-      );
-      const nonPtoItems = weekItems.filter(a => !ptoItems.includes(a));
-
-      const seenPto = new Set<string>();
-      await Promise.all(
-        ptoItems.map(a => {
-          const key = `${a.provider_id}|${a.date}|${a.time_block}`;
-          if (seenPto.has(key)) return Promise.resolve();
-          seenPto.add(key);
-          const params = new URLSearchParams({
-            providerId: a.provider_id,
-            date: a.date,
-            timeBlock: a.time_block,
-          });
-          return fetch(`/api/pto/delete?${params.toString()}`, { method: 'DELETE' });
-        })
-      );
 
       await Promise.all(
         nonPtoItems.map(a =>
@@ -1035,11 +1019,6 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
       );
 
       await fetchData();
-      const leavesResponse = await fetch(
-        `/api/leaves?startDate=${dateRange[0]}&endDate=${dateRange[dateRange.length - 1]}`
-      );
-      const leavesData = await leavesResponse.json();
-      setProviderLeaves(Array.isArray(leavesData) ? leavesData : []);
     } catch (error) {
       console.error('Error clearing week:', error);
       alert('Failed to clear week. Please try again.');
