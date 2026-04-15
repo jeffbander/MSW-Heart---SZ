@@ -3436,7 +3436,7 @@ function ServiceView({
 
   // Render group header row
   const renderGroupHeader = (name: string, colSpan: number) => (
-    <tr key={`group-${name}`}>
+    <tr key={`group-${name}`} className={name === 'ADMINISTRATIVE' || name === 'OFFSITES' ? 'print-hide' : ''}>
       <td
         colSpan={colSpan}
         className="px-3 py-2 font-bold text-sm uppercase tracking-wide"
@@ -3459,8 +3459,9 @@ function ServiceView({
   const renderServiceRow = (row: ServiceRowConfig, dates: string[]) => {
     if (!row.serviceId) return null;
 
+    const hideInPrint = row.name.startsWith('Admin') || row.name.startsWith('Offsites');
     return (
-      <tr key={`${row.name}-${row.timeBlock}`} className="hover:bg-gray-50">
+      <tr key={`${row.name}-${row.timeBlock}`} className={`hover:bg-gray-50 ${hideInPrint ? 'print-hide' : ''}`}>
         <td
           className="sticky left-0 z-10 border text-sm"
           style={{
