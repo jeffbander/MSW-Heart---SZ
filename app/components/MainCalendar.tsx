@@ -1352,6 +1352,19 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
             >
               Next →
             </button>
+            {timeFrame === 'week' && (
+              <button
+                onClick={() => window.print()}
+                className="px-3 py-2 rounded border hover:bg-gray-50 transition-colors flex items-center gap-1"
+                style={{ borderColor: colors.border, color: colors.primaryBlue }}
+                title="Print week (save as PDF)"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                </svg>
+                Print
+              </button>
+            )}
             <div className="relative">
               <span 
                 className="text-lg font-semibold ml-2 cursor-pointer hover:underline" 
@@ -1826,7 +1839,10 @@ export default function MainCalendar({ isAdmin = false }: MainCalendarProps) {
       )}
 
       {/* Main Content */}
-      <main className="p-4">
+      <main className="p-4 print-area">
+        <div className="print-title" style={{ color: colors.primaryBlue }}>
+          {viewMode === 'service' ? 'Service View' : 'Provider View'} — Week of {dateRange[0] ? formatDate(dateRange[0]) : ''}
+        </div>
         {viewMode === 'service' ? (
           <ServiceView
             services={services}
